@@ -216,6 +216,36 @@ def generate_structs(spec, ffi) -> str:
     return "\n".join(lines)
 
 
+# ---- constants -------------------------------------------------------------
+
+# Symbolic constant values in the spec, mapped to a cross-platform-correct
+# Python expression. size_t-width values are resolved at runtime from the ffi so
+# the committed file stays correct on 32- and 64-bit targets alike.
+_CONST_EXPR = {
+    "uint32_max": "0xFFFFFFFF",
+    "uint64_max": "0xFFFFFFFFFFFFFFFF",
+    "usize_max": "_SIZE_T_MAX",
+    "nan": 'float("nan")',
+}
+
+
+def generate_constants(spec) -> str:
+    lines = [
+        _BANNER,
+        '"""WebGPU sentinel constants (e.g. WHOLE_SIZE), from webgpu.json."""',
+        "",
+        "from wgpu._native import ffi as _ffi",
+        "",
+        "_SIZE_T_MAX = (1 << (8 * _ffi.sizeof('size_t'))) - 1",
+        "",
+    ]
+    for const in spec["constants"]:
+        expr = _CONST_EXPR[const["value"]]
+        lines.append(f"{const['name']} = {expr}")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def write_all(out_dir: Path = GENERATED_DIR) -> list[Path]:
     spec = load_spec()
     mod = _import_module()
@@ -229,6 +259,7 @@ def write_all(out_dir: Path = GENERATED_DIR) -> list[Path]:
         ("enums.py", generate_enums(spec, lib)),
         ("flags.py", generate_flags(spec, lib)),
         ("structs.py", generate_structs(spec, ffi)),
+        ("constants.py", generate_constants(spec)),
     ]:
         path = out_dir / fname
         path.write_text(text)
