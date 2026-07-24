@@ -21,8 +21,12 @@ pytestmark = pytest.mark.skipif(
 
 def _load(name: str):
     """Import a generated module by path (avoids the heavy wgpu package)."""
-    spec = importlib.util.spec_from_file_location(name, GENERATED_DIR / f"{name}.py")
+    import sys
+
+    modname = f"_generated_{name}"
+    spec = importlib.util.spec_from_file_location(modname, GENERATED_DIR / f"{name}.py")
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[modname] = mod  # dataclasses need the module registered
     spec.loader.exec_module(mod)
     return mod
 
@@ -69,3 +73,21 @@ def test_known_values():
     assert int(enums.TextureFormat.undefined) == 0
     assert int(enums.PrimitiveTopology.undefined) == 0
     assert int(enums.FeatureName.depth_clip_control) >= 1
+
+
+def test_struct_descriptors_match_compiled_types():
+    """Every descriptor C field (and array count field) must exist on the real type."""
+    structs = _load("structs")
+    from bindgen.ffi_build import NATIVE_DIR, load_compiled
+
+    ffi = load_compiled(NATIVE_DIR).ffi
+    total_fields = 0
+    for desc in structs.STRUCTS.values():
+        c_fields = {f[0] for f in (ffi.typeof(desc.c_name).fields or [])}
+        for mem in desc.members:
+            assert mem.c in c_fields, f"{desc.c_name}.{mem.c} missing"
+            if mem.array:
+                assert mem.count_c in c_fields, f"{desc.c_name}.{mem.count_c} missing"
+            total_fields += 1
+    assert len(structs.STRUCTS) == 80
+    assert total_fields == 292

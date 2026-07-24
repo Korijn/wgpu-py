@@ -62,6 +62,18 @@ def c_struct_field(member_spec_name: str) -> str:
     return camel_case(member_spec_name)
 
 
+def singularize(name: str) -> str:
+    """Match ``webgpu-headers`` singularization for array count fields."""
+    if name == "entries":
+        return "entry"
+    return name[:-1] if name.endswith("s") else name
+
+
+def c_array_count_field(member_spec_name: str) -> str:
+    """Array member ``color_attachments`` -> C count field ``colorAttachmentCount``."""
+    return camel_case(singularize(member_spec_name)) + "Count"
+
+
 def c_method_func(object_spec_name: str, method_spec_name: str) -> str:
     """object ``device`` + method ``create_buffer`` -> ``wgpuDeviceCreateBuffer``."""
     return C_FUNC_PREFIX + pascal_case(object_spec_name) + pascal_case(method_spec_name)

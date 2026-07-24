@@ -36,11 +36,11 @@ def load_spec() -> dict:
     return json.loads(paths.WEBGPU_JSON.read_text())
 
 
-def _import_lib():
-    """Load the compiled low-level extension, returning its ``lib`` object."""
+def _import_module():
+    """Load the compiled low-level extension (exposes ``.lib`` and ``.ffi``)."""
     from .ffi_build import NATIVE_DIR, load_compiled
 
-    return load_compiled(NATIVE_DIR).lib
+    return load_compiled(NATIVE_DIR)
 
 
 def _docstring(text: str | None, indent: str) -> str:
@@ -100,9 +100,126 @@ def generate_flags(spec, lib) -> str:
     return f"{_BANNER}\nimport enum\n\n\n{body}"
 
 
+# ---- structs ---------------------------------------------------------------
+
+def _parse_member_type(spec_type: str) -> tuple[str, str | None, bool]:
+    """Return ``(kind, ref, is_array)`` for a spec member ``type`` string.
+
+    ``kind`` is one of: prim, string, out_string, enum, bitflag, struct,
+    object, callback, c_void. ``ref`` is the referenced spec name for
+    enum/bitflag/struct/object/callback, else ``None``.
+    """
+    is_array = spec_type.startswith("array<")
+    if is_array:
+        spec_type = spec_type[len("array<") : -1]
+    if "." in spec_type:
+        cat, ref = spec_type.split(".", 1)
+        kind = {
+            "enum": "enum",
+            "bitflag": "bitflag",
+            "struct": "struct",
+            "object": "object",
+            "callback": "callback",
+        }.get(cat, cat)
+        return kind, ref, is_array
+    if spec_type in ("string_with_default_empty", "nullable_string"):
+        return "string", None, is_array
+    if spec_type == "out_string":
+        return "out_string", None, is_array
+    if spec_type == "c_void":
+        return "c_void", None, is_array
+    return "prim", spec_type, is_array
+
+
+def generate_structs(spec, ffi) -> str:
+    """Emit declarative descriptors for every struct, validated against the ffi.
+
+    Each descriptor records the C type/field names, member kinds, pointer-ness,
+    optionality and defaults -- everything a runtime builder needs to turn a
+    Python mapping into a filled cffi struct. Every C field name is checked to
+    exist on the real compiled type, so a naming drift fails generation.
+    """
+    lines = [
+        _BANNER,
+        '"""Declarative descriptors for every wgpu-native struct.',
+        "",
+        "``STRUCTS[spec_name]`` maps to a ``StructDescriptor``. The runtime struct",
+        "builder consumes these; they are generated, not hand-written.",
+        '"""',
+        "",
+        "from __future__ import annotations",
+        "",
+        "from dataclasses import dataclass, field",
+        "",
+        "",
+        "@dataclass(frozen=True)",
+        "class Member:",
+        "    py: str          # pythonic keyword name",
+        "    c: str           # C struct field name",
+        "    kind: str        # prim|string|out_string|enum|bitflag|struct|object|callback|c_void",
+        "    ref: str | None  # referenced spec name (enum/bitflag/struct/object)",
+        "    pointer: str | None",
+        "    optional: bool",
+        "    default: object",
+        "    array: bool",
+        "    count_c: str | None  # C count field, for arrays",
+        "",
+        "",
+        "@dataclass(frozen=True)",
+        "class StructDescriptor:",
+        "    c_name: str",
+        "    category: str    # extensible|standalone|extension|extensible_callback_arg",
+        "    members: tuple = field(default_factory=tuple)",
+        "",
+        "",
+        "STRUCTS: dict[str, StructDescriptor] = {}",
+        "",
+    ]
+
+    for st in spec["structs"]:
+        c_name = naming.c_type_name(st["name"])
+        c_type = ffi.typeof(c_name)  # validates the struct type exists
+        c_fields = {f[0] for f in (c_type.fields or [])}
+
+        members_src = []
+        for mem in st.get("members", []):
+            kind, ref, is_array = _parse_member_type(mem["type"])
+            c_field = naming.c_struct_field(mem["name"])
+            assert c_field in c_fields, f"{c_name} has no field {c_field}"
+            count_c = None
+            if is_array:
+                count_c = naming.c_array_count_field(mem["name"])
+                assert count_c in c_fields, f"{c_name} has no count field {count_c}"
+            members_src.append(
+                "        Member(py={!r}, c={!r}, kind={!r}, ref={!r}, pointer={!r}, "
+                "optional={!r}, default={!r}, array={!r}, count_c={!r}),".format(
+                    naming.py_member_name(mem["name"]),
+                    c_field,
+                    kind,
+                    ref,
+                    mem.get("pointer"),
+                    bool(mem.get("optional", False)),
+                    mem.get("default"),
+                    is_array,
+                    count_c,
+                )
+            )
+        lines.append(f"STRUCTS[{st['name']!r}] = StructDescriptor(")
+        lines.append(f"    c_name={c_name!r},")
+        lines.append(f"    category={st.get('type')!r},")
+        if members_src:
+            lines.append("    members=(")
+            lines.extend(members_src)
+            lines.append("    ),")
+        lines.append(")")
+        lines.append("")
+    return "\n".join(lines)
+
+
 def write_all(out_dir: Path = GENERATED_DIR) -> list[Path]:
     spec = load_spec()
-    lib = _import_lib()
+    mod = _import_module()
+    lib, ffi = mod.lib, mod.ffi
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "__init__.py").write_text(
         _BANNER + '\n"""Auto-generated Pythonic layer for wgpu-native."""\n'
@@ -111,6 +228,7 @@ def write_all(out_dir: Path = GENERATED_DIR) -> list[Path]:
     for fname, text in [
         ("enums.py", generate_enums(spec, lib)),
         ("flags.py", generate_flags(spec, lib)),
+        ("structs.py", generate_structs(spec, ffi)),
     ]:
         path = out_dir / fname
         path.write_text(text)
