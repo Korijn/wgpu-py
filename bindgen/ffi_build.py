@@ -69,6 +69,27 @@ def compile_ffi(
     return ffi.compile(tmpdir=str(out_dir), verbose=verbose)
 
 
+def load_compiled(build_dir: str | Path, stem: str = "_wgpu"):
+    """Import a compiled extension directly by file path.
+
+    Loading by path (rather than by dotted name) lets the generator use the
+    freshly-built low-level module without importing the heavyweight ``wgpu``
+    package. Returns the imported module (with ``.lib`` and ``.ffi``).
+    """
+    import importlib.util
+
+    build_dir = Path(build_dir)
+    matches = sorted(build_dir.glob(f"{stem}.*.so")) + sorted(build_dir.glob(f"{stem}.pyd"))
+    if not matches:
+        raise FileNotFoundError(f"no compiled {stem} extension in {build_dir}")
+    spec = importlib.util.spec_from_file_location(stem, matches[0])
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+NATIVE_DIR = paths.REPO_ROOT / "wgpu" / "_native"
+
+
 if __name__ == "__main__":
-    target = paths.REPO_ROOT / "wgpu" / "_native"
-    print(compile_ffi(target))
+    print(compile_ffi(NATIVE_DIR, module_name="_wgpu"))
