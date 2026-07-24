@@ -32,10 +32,9 @@ class Api:
             (name, m.py): m for name, ot in self.objects.items() for m in ot.methods
         }
 
-    def invoke(self, spec_object: str, method_py: str, handle, args):
-        method = self._methods[(spec_object, method_py)]
-        pump = self._pump if method.is_async else None
-        return self.invoker.call(method, handle, args, pump=pump)
+    def invoke(self, caller, method_py: str, args):
+        method = self._methods[(caller._spec_name, method_py)]
+        return self.invoker.call(method, caller, args)
 
     def release(self, spec_object: str, handle):
         from bindgen import naming
@@ -43,19 +42,16 @@ class Api:
         cfunc = naming.c_object_lifecycle(spec_object, "Release")
         getattr(self.lib, cfunc)(handle)
 
-    def _pump(self):
-        # Drives all pending AllowProcessEvents callbacks. Requires a live
-        # instance; wired once instance-tracking lands (CI/GPU validation).
-        raise NotImplementedError("event pump not yet wired (needs instance tracking)")
-
     def create_instance(self, descriptor=None):
         """Entry point: create the root :class:`GPUInstance`."""
         ptr = self.ffi.NULL
-        keep = None
         if descriptor:
-            ptr, keep = self.invoker.structs.new("instance_descriptor", descriptor)
+            ptr, _keep = self.invoker.structs.new("instance_descriptor", descriptor)
         handle = self.lib.wgpuCreateInstance(ptr)
-        return self.registry["instance"](handle)
+        # The instance's pump drives every downstream async op; child objects
+        # inherit it as they are created.
+        pump = lambda: self.lib.wgpuInstanceProcessEvents(handle)  # noqa: E731
+        return self.registry["instance"](handle, pump)
 
 
 @lru_cache(maxsize=1)

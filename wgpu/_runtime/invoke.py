@@ -78,14 +78,14 @@ class Invoker:
 
     # -- return wrapping ---------------------------------------------------
 
-    def wrap_return(self, method, c_ret):
+    def wrap_return(self, method, c_ret, pump=None):
         kind, ref = method.ret_kind, method.ret_ref
         if kind is None:
             return None
         if kind == "object":
             if not c_ret:  # NULL
                 return None if method.ret_optional else c_ret
-            return self._wrap_object(ref, c_ret)
+            return self._wrap_object(ref, c_ret, pump)
         if kind == "enum":
             return getattr(self.enums, _py(ref))(c_ret)
         if kind == "bitflag":
@@ -96,23 +96,25 @@ class Invoker:
             raise Unsupported(f"{kind} return not yet supported ({method.c_func})")
         return c_ret
 
-    def _wrap_object(self, ref, handle):
+    def _wrap_object(self, ref, handle, pump=None):
         cls = self.registry.get(ref)
-        return cls(handle) if cls is not None else handle
+        return cls(handle, pump) if cls is not None else handle
 
     # -- the call ----------------------------------------------------------
 
-    def call(self, method, self_handle, py_args, pump=None):
+    def call(self, method, caller, py_args):
+        self_handle = caller._handle
+        pump = caller._pump
         c_args, keep = self.marshal_args(method, py_args)
         cfunc = getattr(self.lib, method.c_func)
         if method.is_async:
             return self._call_async(method, cfunc, self_handle, c_args, keep, pump)
         c_ret = cfunc(self_handle, *c_args)
-        return self.wrap_return(method, c_ret)
+        return self.wrap_return(method, c_ret, pump)
 
     def _call_async(self, method, cfunc, self_handle, c_args, keep, pump):
         if pump is None:
-            raise RuntimeError(f"{method.py}() is async but no pump was provided")
+            raise RuntimeError(f"{method.py}() is async but no event pump is available")
         future = WgpuFuture(pump)
         info = self.ffi.new(method.callback_info_c + " *")
         info.mode = self.lib.WGPUCallbackMode_AllowProcessEvents
@@ -120,24 +122,35 @@ class Invoker:
         cb_ctype = self.ffi.getctype(
             dict(self.ffi.typeof(info).item.fields)["callback"].type
         )
+        result_ref = method.callback_result_ref
+        SUCCESS = 1  # every *Status enum uses 1 for success
 
         @self.ffi.callback(cb_ctype)
         def _cb(status, *rest):
             # Callback shape: (status, [result], message, ud1, ud2). When the op
-            # produces an object (request_adapter/device, pipeline-async) the
-            # result handle precedes the message; otherwise there is only status.
+            # yields an object the handle precedes the message; else status only.
             try:
-                if len(rest) >= 3:  # (result, message, ud1, ud2)
-                    future.set_result(rest[0])
-                else:  # (message, ud1, ud2)
+                if int(status) != SUCCESS:
+                    msg = _message(self.ffi, rest)
+                    future.set_error(RuntimeError(f"{method.py} failed: {msg}"))
+                elif result_ref is not None:
+                    future.set_result(self._wrap_object(result_ref, rest[0], pump))
+                else:
                     future.set_result(int(status))
             except BaseException as exc:  # noqa: BLE001
                 future.set_error(exc)
 
         info.callback = _cb
-        future._keep = (info, _cb, keep)  # keep alive until fired
+        future._keep = (info, _cb, keep)  # keep alive until the callback fires
         cfunc(self_handle, *c_args, info[0])
         return future
+
+
+def _message(ffi, rest) -> str:
+    for item in rest:
+        if isinstance(item, ffi.CData) and "StringView" in ffi.getctype(ffi.typeof(item)):
+            return ffi.string(item.data, item.length).decode("utf-8", "replace") if item.data else ""
+    return ""
 
 
 def _py(spec_name: str) -> str:

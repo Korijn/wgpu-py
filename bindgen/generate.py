@@ -308,6 +308,7 @@ def generate_objects(spec, lib, ffi) -> str:
         "    is_async: bool = False",
         "    callback_ref: str | None = None",
         "    callback_info_c: str | None = None  # e.g. WGPURequestAdapterCallbackInfo",
+        "    callback_result_ref: str | None = None  # object the callback returns",
         "    doc: str = ''",
         "",
         "",
@@ -320,6 +321,15 @@ def generate_objects(spec, lib, ffi) -> str:
         "OBJECTS: dict[str, ObjectType] = {}",
         "",
     ]
+
+    callbacks = {cb["name"]: cb for cb in spec["callbacks"]}
+
+    def _callback_result(callback_ref):
+        cb = callbacks[callback_ref.split(".", 1)[1]]
+        for a in cb.get("args", []):
+            if a["type"].startswith("object."):
+                return a["type"].split(".", 1)[1]
+        return None
 
     for obj in spec["objects"]:
         c_name = naming.c_type_name(obj["name"])
@@ -342,9 +352,11 @@ def generate_objects(spec, lib, ffi) -> str:
                 ret_kind, ret_ref, _ = _parse_member_type(ret["type"])
                 ret_optional = bool(ret.get("optional", False))
             callback_info_c = None
+            callback_result_ref = None
             if is_async:
                 cb = meth["callback"].split(".", 1)[1]
                 callback_info_c = naming.c_type_name(cb) + "CallbackInfo"
+                callback_result_ref = _callback_result(meth["callback"])
             args_src = ",\n            ".join(_arg_descriptor(a) for a in args)
             methods_src.append(
                 "        Method(\n"
@@ -353,6 +365,7 @@ def generate_objects(spec, lib, ffi) -> str:
                 f"            ret_kind={ret_kind!r}, ret_ref={ret_ref!r}, ret_optional={ret_optional!r},\n"
                 f"            is_async={is_async!r}, callback_ref={meth.get('callback')!r},\n"
                 f"            callback_info_c={callback_info_c!r},\n"
+                f"            callback_result_ref={callback_result_ref!r},\n"
                 f"            doc={_clean_doc(meth.get('doc'))!r},\n"
                 "        ),"
             )

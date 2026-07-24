@@ -14,15 +14,18 @@ class GPUObjectBase:
 
     _spec_name: str = ""
 
-    __slots__ = ("_handle", "__weakref__")
+    __slots__ = ("_handle", "_pump", "__weakref__")
 
-    def __init__(self, handle):
+    def __init__(self, handle, pump=None):
         self._handle = handle
+        # Drives wgpu-native's event loop for async ops; inherited from the
+        # object that created this one (ultimately the instance).
+        self._pump = pump
 
     def _invoke(self, method_name: str, *args):
         from .api import get_api
 
-        return get_api().invoke(self._spec_name, method_name, self._handle, args)
+        return get_api().invoke(self, method_name, args)
 
     def _release(self):
         """Release the underlying handle exactly once (idempotent)."""

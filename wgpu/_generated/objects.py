@@ -37,6 +37,7 @@ class Method:
     is_async: bool = False
     callback_ref: str | None = None
     callback_info_c: str | None = None  # e.g. WGPURequestAdapterCallbackInfo
+    callback_result_ref: str | None = None  # object the callback returns
     doc: str = ''
 
 
@@ -57,6 +58,7 @@ OBJECTS['adapter'] = ObjectType(
             ret_kind='enum', ret_ref='status', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -65,6 +67,7 @@ OBJECTS['adapter'] = ObjectType(
             ret_kind='prim', ret_ref='bool', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -73,6 +76,7 @@ OBJECTS['adapter'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='Get the list of @ref WGPUFeatureName values supported by the adapter.',
         ),
         Method(
@@ -81,6 +85,7 @@ OBJECTS['adapter'] = ObjectType(
             ret_kind='enum', ret_ref='status', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -89,6 +94,7 @@ OBJECTS['adapter'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=True, callback_ref='callback.request_device',
             callback_info_c='WGPURequestDeviceCallbackInfo',
+            callback_result_ref='device',
             doc='',
         ),
     ),
@@ -103,6 +109,7 @@ OBJECTS['bind_group'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -117,6 +124,7 @@ OBJECTS['bind_group_layout'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -133,6 +141,7 @@ OBJECTS['buffer'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=True, callback_ref='callback.buffer_map',
             callback_info_c='WGPUBufferMapCallbackInfo',
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -142,6 +151,7 @@ OBJECTS['buffer'] = ObjectType(
             ret_kind='c_void', ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='Returns a mutable pointer to beginning of the mapped range.\nSee @ref MappedRangeBehavior for error conditions and guarantees.\nThis function is safe to call inside spontaneous callbacks (see @ref CallbackReentrancy).\n\nIn Wasm, if `memcpy`ing into this range, prefer using @ref wgpuBufferWriteMappedRange\ninstead for better performance.',
         ),
         Method(
@@ -151,6 +161,7 @@ OBJECTS['buffer'] = ObjectType(
             ret_kind='c_void', ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='Returns a const pointer to beginning of the mapped range.\nIt must not be written; writing to this range causes undefined behavior.\nSee @ref MappedRangeBehavior for error conditions and guarantees.\nThis function is safe to call inside spontaneous callbacks (see @ref CallbackReentrancy).\n\nIn Wasm, if `memcpy`ing from this range, prefer using @ref wgpuBufferReadMappedRange\ninstead for better performance.',
         ),
         Method(
@@ -161,6 +172,7 @@ OBJECTS['buffer'] = ObjectType(
             ret_kind='enum', ret_ref='status', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc="Copies a range of data from the buffer mapping into the provided destination pointer.\nSee @ref MappedRangeBehavior for error conditions and guarantees.\nThis function is safe to call inside spontaneous callbacks (see @ref CallbackReentrancy).\n\nIn Wasm, this is more efficient than copying from a mapped range into a `malloc`'d range.",
         ),
         Method(
@@ -171,6 +183,7 @@ OBJECTS['buffer'] = ObjectType(
             ret_kind='enum', ret_ref='status', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc="Copies a range of data from the provided source pointer into the buffer mapping.\nSee @ref MappedRangeBehavior for error conditions and guarantees.\nThis function is safe to call inside spontaneous callbacks (see @ref CallbackReentrancy).\n\nIn Wasm, this is more efficient than copying from a `malloc`'d range into a mapped range.",
         ),
         Method(
@@ -179,6 +192,7 @@ OBJECTS['buffer'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -187,6 +201,7 @@ OBJECTS['buffer'] = ObjectType(
             ret_kind='bitflag', ret_ref='buffer_usage', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -195,6 +210,7 @@ OBJECTS['buffer'] = ObjectType(
             ret_kind='prim', ret_ref='uint64', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -203,6 +219,7 @@ OBJECTS['buffer'] = ObjectType(
             ret_kind='enum', ret_ref='buffer_map_state', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -211,6 +228,7 @@ OBJECTS['buffer'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -219,6 +237,7 @@ OBJECTS['buffer'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -233,6 +252,7 @@ OBJECTS['command_buffer'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -247,6 +267,7 @@ OBJECTS['command_encoder'] = ObjectType(
             ret_kind='object', ret_ref='command_buffer', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -255,6 +276,7 @@ OBJECTS['command_encoder'] = ObjectType(
             ret_kind='object', ret_ref='compute_pass_encoder', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -263,6 +285,7 @@ OBJECTS['command_encoder'] = ObjectType(
             ret_kind='object', ret_ref='render_pass_encoder', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -275,6 +298,7 @@ OBJECTS['command_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -285,6 +309,7 @@ OBJECTS['command_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -295,6 +320,7 @@ OBJECTS['command_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -305,6 +331,7 @@ OBJECTS['command_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -315,6 +342,7 @@ OBJECTS['command_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -323,6 +351,7 @@ OBJECTS['command_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -331,6 +360,7 @@ OBJECTS['command_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -339,6 +369,7 @@ OBJECTS['command_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -351,6 +382,7 @@ OBJECTS['command_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -360,6 +392,7 @@ OBJECTS['command_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -368,6 +401,7 @@ OBJECTS['command_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -382,6 +416,7 @@ OBJECTS['compute_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -390,6 +425,7 @@ OBJECTS['compute_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -398,6 +434,7 @@ OBJECTS['compute_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -406,6 +443,7 @@ OBJECTS['compute_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -416,6 +454,7 @@ OBJECTS['compute_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -426,6 +465,7 @@ OBJECTS['compute_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -436,6 +476,7 @@ OBJECTS['compute_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -445,6 +486,7 @@ OBJECTS['compute_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -453,6 +495,7 @@ OBJECTS['compute_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -461,6 +504,7 @@ OBJECTS['compute_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -475,6 +519,7 @@ OBJECTS['compute_pipeline'] = ObjectType(
             ret_kind='object', ret_ref='bind_group_layout', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -483,6 +528,7 @@ OBJECTS['compute_pipeline'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -497,6 +543,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind='object', ret_ref='bind_group', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -505,6 +552,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind='object', ret_ref='bind_group_layout', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -513,6 +561,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind='object', ret_ref='buffer', ret_optional=True,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='TODO\n\nIf @ref WGPUBufferDescriptor::mappedAtCreation is `true` and the mapping allocation fails,\nreturns `NULL`.',
         ),
         Method(
@@ -521,6 +570,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind='object', ret_ref='command_encoder', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -529,6 +579,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind='object', ret_ref='compute_pipeline', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -537,6 +588,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=True, callback_ref='callback.create_compute_pipeline_async',
             callback_info_c='WGPUCreateComputePipelineAsyncCallbackInfo',
+            callback_result_ref='compute_pipeline',
             doc='',
         ),
         Method(
@@ -545,6 +597,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind='object', ret_ref='pipeline_layout', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -553,6 +606,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind='object', ret_ref='query_set', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -561,6 +615,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=True, callback_ref='callback.create_render_pipeline_async',
             callback_info_c='WGPUCreateRenderPipelineAsyncCallbackInfo',
+            callback_result_ref='render_pipeline',
             doc='',
         ),
         Method(
@@ -569,6 +624,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind='object', ret_ref='render_bundle_encoder', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -577,6 +633,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind='object', ret_ref='render_pipeline', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -585,6 +642,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind='object', ret_ref='sampler', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -593,6 +651,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind='object', ret_ref='shader_module', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -601,6 +660,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind='object', ret_ref='texture', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -609,6 +669,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -617,6 +678,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind='struct', ret_ref='future', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -625,6 +687,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind='enum', ret_ref='status', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -633,6 +696,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind='prim', ret_ref='bool', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -641,6 +705,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='Get the list of @ref WGPUFeatureName values supported by the device.',
         ),
         Method(
@@ -649,6 +714,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind='enum', ret_ref='status', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -657,6 +723,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind='object', ret_ref='queue', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -665,6 +732,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc="Pushes an error scope to the current thread's error scope stack.\nSee @ref ErrorScopes.",
         ),
         Method(
@@ -673,6 +741,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=True, callback_ref='callback.pop_error_scope',
             callback_info_c='WGPUPopErrorScopeCallbackInfo',
+            callback_result_ref=None,
             doc="Pops an error scope to the current thread's error scope stack,\nasynchronously returning the result. See @ref ErrorScopes.",
         ),
         Method(
@@ -681,6 +750,7 @@ OBJECTS['device'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -695,6 +765,7 @@ OBJECTS['external_texture'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -709,6 +780,7 @@ OBJECTS['instance'] = ObjectType(
             ret_kind='object', ret_ref='surface', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='Creates a @ref WGPUSurface, see @ref Surface-Creation for more details.',
         ),
         Method(
@@ -717,6 +789,7 @@ OBJECTS['instance'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='Get the list of @ref WGPUWGSLLanguageFeatureName values supported by the instance.',
         ),
         Method(
@@ -725,6 +798,7 @@ OBJECTS['instance'] = ObjectType(
             ret_kind='prim', ret_ref='bool', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -733,6 +807,7 @@ OBJECTS['instance'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='Processes asynchronous events on this `WGPUInstance`, calling any callbacks for asynchronous operations created with @ref WGPUCallbackMode_AllowProcessEvents.\n\nSee @ref Process-Events for more information.',
         ),
         Method(
@@ -741,6 +816,7 @@ OBJECTS['instance'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=True, callback_ref='callback.request_adapter',
             callback_info_c='WGPURequestAdapterCallbackInfo',
+            callback_result_ref='adapter',
             doc='',
         ),
         Method(
@@ -751,6 +827,7 @@ OBJECTS['instance'] = ObjectType(
             ret_kind='enum', ret_ref='wait_status', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='Wait for at least one WGPUFuture in `futures` to complete, and call callbacks of the respective completed asynchronous operations.\n\nSee @ref Wait-Any for more information.',
         ),
     ),
@@ -765,6 +842,7 @@ OBJECTS['pipeline_layout'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -779,6 +857,7 @@ OBJECTS['query_set'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -787,6 +866,7 @@ OBJECTS['query_set'] = ObjectType(
             ret_kind='enum', ret_ref='query_type', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -795,6 +875,7 @@ OBJECTS['query_set'] = ObjectType(
             ret_kind='prim', ret_ref='uint32', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -803,6 +884,7 @@ OBJECTS['query_set'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -817,6 +899,7 @@ OBJECTS['queue'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -825,6 +908,7 @@ OBJECTS['queue'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=True, callback_ref='callback.queue_work_done',
             callback_info_c='WGPUQueueWorkDoneCallbackInfo',
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -836,6 +920,7 @@ OBJECTS['queue'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='Produces a @ref DeviceError both content-timeline (`size` alignment) and device-timeline\nerrors defined by the WebGPU specification.',
         ),
         Method(
@@ -848,6 +933,7 @@ OBJECTS['queue'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -856,6 +942,7 @@ OBJECTS['queue'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -870,6 +957,7 @@ OBJECTS['render_bundle'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -884,6 +972,7 @@ OBJECTS['render_bundle_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -894,6 +983,7 @@ OBJECTS['render_bundle_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -904,6 +994,7 @@ OBJECTS['render_bundle_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -915,6 +1006,7 @@ OBJECTS['render_bundle_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -927,6 +1019,7 @@ OBJECTS['render_bundle_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -936,6 +1029,7 @@ OBJECTS['render_bundle_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -945,6 +1039,7 @@ OBJECTS['render_bundle_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -953,6 +1048,7 @@ OBJECTS['render_bundle_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -961,6 +1057,7 @@ OBJECTS['render_bundle_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -969,6 +1066,7 @@ OBJECTS['render_bundle_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -980,6 +1078,7 @@ OBJECTS['render_bundle_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -991,6 +1090,7 @@ OBJECTS['render_bundle_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -999,6 +1099,7 @@ OBJECTS['render_bundle_encoder'] = ObjectType(
             ret_kind='object', ret_ref='render_bundle', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1007,6 +1108,7 @@ OBJECTS['render_bundle_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -1021,6 +1123,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1031,6 +1134,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1041,6 +1145,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1052,6 +1157,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1064,6 +1170,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1073,6 +1180,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1082,6 +1190,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1090,6 +1199,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1098,6 +1208,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1106,6 +1217,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1114,6 +1226,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1122,6 +1235,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1130,6 +1244,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1143,6 +1258,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='TODO\n\nIf any argument is non-finite, produces a @ref NonFiniteFloatValueError.',
         ),
         Method(
@@ -1154,6 +1270,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1165,6 +1282,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1176,6 +1294,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1184,6 +1303,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1192,6 +1312,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1200,6 +1321,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1208,6 +1330,7 @@ OBJECTS['render_pass_encoder'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -1222,6 +1345,7 @@ OBJECTS['render_pipeline'] = ObjectType(
             ret_kind='object', ret_ref='bind_group_layout', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1230,6 +1354,7 @@ OBJECTS['render_pipeline'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -1244,6 +1369,7 @@ OBJECTS['sampler'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -1258,6 +1384,7 @@ OBJECTS['shader_module'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=True, callback_ref='callback.compilation_info',
             callback_info_c='WGPUCompilationInfoCallbackInfo',
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1266,6 +1393,7 @@ OBJECTS['shader_module'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -1280,6 +1408,7 @@ OBJECTS['surface'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='Configures parameters for rendering to `surface`.\nProduces a @ref DeviceError for all content-timeline errors defined by the WebGPU specification.\n\nSee @ref Surface-Configuration for more details.',
         ),
         Method(
@@ -1289,6 +1418,7 @@ OBJECTS['surface'] = ObjectType(
             ret_kind='enum', ret_ref='status', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='Provides information on how `adapter` is able to use `surface`.\nSee @ref Surface-Capabilities for more details.',
         ),
         Method(
@@ -1297,6 +1427,7 @@ OBJECTS['surface'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='Returns the @ref WGPUTexture to render to `surface` this frame along with metadata on the frame.\nReturns `NULL` and @ref WGPUSurfaceGetCurrentTextureStatus_Error if the surface is not configured.\n\nSee @ref Surface-Presenting for more details.',
         ),
         Method(
@@ -1305,6 +1436,7 @@ OBJECTS['surface'] = ObjectType(
             ret_kind='enum', ret_ref='status', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc="Shows `surface`'s current texture to the user.\nSee @ref Surface-Presenting for more details.",
         ),
         Method(
@@ -1313,6 +1445,7 @@ OBJECTS['surface'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='Removes the configuration for `surface`.\nSee @ref Surface-Configuration for more details.',
         ),
         Method(
@@ -1321,6 +1454,7 @@ OBJECTS['surface'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='Modifies the label used to refer to `surface`.',
         ),
     ),
@@ -1335,6 +1469,7 @@ OBJECTS['texture'] = ObjectType(
             ret_kind='object', ret_ref='texture_view', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1343,6 +1478,7 @@ OBJECTS['texture'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1351,6 +1487,7 @@ OBJECTS['texture'] = ObjectType(
             ret_kind='prim', ret_ref='uint32', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1359,6 +1496,7 @@ OBJECTS['texture'] = ObjectType(
             ret_kind='prim', ret_ref='uint32', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1367,6 +1505,7 @@ OBJECTS['texture'] = ObjectType(
             ret_kind='prim', ret_ref='uint32', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1375,6 +1514,7 @@ OBJECTS['texture'] = ObjectType(
             ret_kind='prim', ret_ref='uint32', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1383,6 +1523,7 @@ OBJECTS['texture'] = ObjectType(
             ret_kind='prim', ret_ref='uint32', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1391,6 +1532,7 @@ OBJECTS['texture'] = ObjectType(
             ret_kind='enum', ret_ref='texture_dimension', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1399,6 +1541,7 @@ OBJECTS['texture'] = ObjectType(
             ret_kind='enum', ret_ref='texture_view_dimension', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1407,6 +1550,7 @@ OBJECTS['texture'] = ObjectType(
             ret_kind='enum', ret_ref='texture_format', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1415,6 +1559,7 @@ OBJECTS['texture'] = ObjectType(
             ret_kind='bitflag', ret_ref='texture_usage', ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
         Method(
@@ -1423,6 +1568,7 @@ OBJECTS['texture'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),
@@ -1437,6 +1583,7 @@ OBJECTS['texture_view'] = ObjectType(
             ret_kind=None, ret_ref=None, ret_optional=False,
             is_async=False, callback_ref=None,
             callback_info_c=None,
+            callback_result_ref=None,
             doc='',
         ),
     ),

@@ -69,9 +69,15 @@ been built.
 | Runtime struct builder (mapping → cffi cdata) | ✅ done (`wgpu/_runtime/`) |
 | Generate method table + `GPU*` classes | ✅ done (23 classes, 146 methods) |
 | Runtime invoker (marshal args, wrap returns, release) | ✅ done (sync path) |
-| Async future primitive (poll-driven, sniffio) | ✅ structure; live-validate in CI |
+| Async future primitive (poll-driven, sniffio) | ✅ done (sync `.wait()` + `await`) |
 | Array / raw-pointer args, struct out-returns | ⏳ next |
 | Buffer mapping (memoryview) | ⏳ planned |
+
+Validated end-to-end against **Mesa lavapipe (llvmpipe)**: the async chain
+`instance → request_adapter → request_device` resolves a real `GPUDevice` via
+both `.wait()` and `await`, and sync methods (`get_queue`,
+`create_command_encoder`, `create_buffer`, scalar/enum/object returns) work
+against the live driver.
 | Minimal compatibility shim (current wgpu-py API) | ⏳ planned |
 | cibuildwheel matrix (all OS/arch) | ⏳ planned |
 
