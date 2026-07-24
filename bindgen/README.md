@@ -65,8 +65,11 @@ been built.
 | Generate full-surface cdef from headers | ✅ done (228 functions) |
 | Generate enums / flags (`_generated/`) | ✅ done (54 enums, 5 flags) |
 | Generate struct descriptors (`_generated/`) | ✅ done (80 structs, 292 members) |
-| Runtime struct builder (mapping → cffi cdata) | ⏳ next |
+| Generate constants (`_generated/`) | ✅ done (11 sentinels) |
+| Runtime struct builder (mapping → cffi cdata) | ✅ done (`wgpu/_runtime/`) |
 | Generate object classes + method bodies | ⏳ next |
+| Async future primitive (poll-driven, sniffio) | ⏳ next |
+| Buffer mapping (memoryview) | ⏳ planned |
 | Minimal compatibility shim (current wgpu-py API) | ⏳ planned |
 | cibuildwheel matrix (all OS/arch) | ⏳ planned |
 
