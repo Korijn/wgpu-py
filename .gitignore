@@ -126,3 +126,6 @@ venv.bak/
 
 # jetbrains idea
 .idea/
+# Generated cffi extension (built from wgpu-native submodule)
+wgpu/_native/
+bindgen/**/__pycache__/
