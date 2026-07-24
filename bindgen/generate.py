@@ -246,6 +246,201 @@ def generate_constants(spec) -> str:
     return "\n".join(lines)
 
 
+# ---- objects & methods -----------------------------------------------------
+
+def _arg_descriptor(arg: dict) -> str:
+    """Emit an ``Arg(...)`` literal for a method argument."""
+    kind, ref, is_array = _parse_member_type(arg["type"])
+    count_c = naming.c_array_count_field(arg["name"]) if is_array else None
+    return (
+        "Arg(py={!r}, kind={!r}, ref={!r}, pointer={!r}, optional={!r}, "
+        "array={!r}, count_c={!r})".format(
+            naming.py_member_name(arg["name"]),
+            kind,
+            ref,
+            arg.get("pointer"),
+            bool(arg.get("optional", False)),
+            is_array,
+            count_c,
+        )
+    )
+
+
+def _c_arg_count(lib, ffi, c_func: str) -> int:
+    return len(ffi.typeof(getattr(lib, c_func)).args)
+
+
+def generate_objects(spec, lib, ffi) -> str:
+    """Emit the declarative method table for every object, validated against
+    the compiled lib (each C function exists and its arg count matches)."""
+    lines = [
+        _BANNER,
+        '"""Declarative object/method descriptors, generated from webgpu.json.',
+        "",
+        "The runtime invoker turns these into live Python method calls. Names and",
+        "arg counts are validated against the compiled extension at generation.",
+        '"""',
+        "",
+        "from __future__ import annotations",
+        "",
+        "from dataclasses import dataclass, field",
+        "",
+        "",
+        "@dataclass(frozen=True)",
+        "class Arg:",
+        "    py: str",
+        "    kind: str        # prim|string|enum|bitflag|struct|object|c_void",
+        "    ref: str | None",
+        "    pointer: str | None",
+        "    optional: bool",
+        "    array: bool",
+        "    count_c: str | None",
+        "",
+        "",
+        "@dataclass(frozen=True)",
+        "class Method:",
+        "    py: str",
+        "    c_func: str",
+        "    args: tuple = ()",
+        "    ret_kind: str | None = None   # None == void",
+        "    ret_ref: str | None = None",
+        "    ret_optional: bool = False",
+        "    is_async: bool = False",
+        "    callback_ref: str | None = None",
+        "    callback_info_c: str | None = None  # e.g. WGPURequestAdapterCallbackInfo",
+        "    doc: str = ''",
+        "",
+        "",
+        "@dataclass(frozen=True)",
+        "class ObjectType:",
+        "    c_name: str",
+        "    methods: tuple = field(default_factory=tuple)",
+        "",
+        "",
+        "OBJECTS: dict[str, ObjectType] = {}",
+        "",
+    ]
+
+    for obj in spec["objects"]:
+        c_name = naming.c_type_name(obj["name"])
+        methods_src = []
+        for meth in obj.get("methods", []):
+            c_func = naming.c_method_func(obj["name"], meth["name"])
+            n_c_args = _c_arg_count(lib, ffi, c_func)  # validates func exists
+            is_async = "callback" in meth
+            args = meth.get("args", [])
+            # expected C args: self + (2 per array arg else 1) + (1 if async)
+            expected = 1 + sum(2 if a["type"].startswith("array<") else 1 for a in args)
+            expected += 1 if is_async else 0
+            assert expected == n_c_args, (
+                f"{c_func}: arg-count mismatch spec={expected} c={n_c_args}"
+            )
+            ret = meth.get("returns")
+            ret_kind = ret_ref = None
+            ret_optional = False
+            if ret and not is_async:
+                ret_kind, ret_ref, _ = _parse_member_type(ret["type"])
+                ret_optional = bool(ret.get("optional", False))
+            callback_info_c = None
+            if is_async:
+                cb = meth["callback"].split(".", 1)[1]
+                callback_info_c = naming.c_type_name(cb) + "CallbackInfo"
+            args_src = ",\n            ".join(_arg_descriptor(a) for a in args)
+            methods_src.append(
+                "        Method(\n"
+                f"            py={meth['name']!r}, c_func={c_func!r},\n"
+                f"            args=({args_src}{',' if args else ''}),\n"
+                f"            ret_kind={ret_kind!r}, ret_ref={ret_ref!r}, ret_optional={ret_optional!r},\n"
+                f"            is_async={is_async!r}, callback_ref={meth.get('callback')!r},\n"
+                f"            callback_info_c={callback_info_c!r},\n"
+                f"            doc={_clean_doc(meth.get('doc'))!r},\n"
+                "        ),"
+            )
+        lines.append(f"OBJECTS[{obj['name']!r}] = ObjectType(")
+        lines.append(f"    c_name={c_name!r},")
+        if methods_src:
+            lines.append("    methods=(")
+            lines.extend(methods_src)
+            lines.append("    ),")
+        lines.append(")")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _clean_doc(text: str | None) -> str:
+    text = (text or "").strip()
+    return "" if text in ("", "TODO") else text
+
+
+# ---- classes ---------------------------------------------------------------
+
+def generate_classes(spec) -> str:
+    """Emit one ``GPU<Object>`` class per object with real method signatures.
+
+    Every method body funnels through ``GPUObjectBase._invoke``, so the classes
+    are ergonomic (introspectable signatures + docstrings) with zero per-method
+    hand code.
+    """
+    import keyword as _kw
+
+    lines = [
+        _BANNER,
+        '"""Generated ``GPU*`` wrapper classes for wgpu-native objects."""',
+        "",
+        "from wgpu._runtime.base import GPUObjectBase",
+        "",
+    ]
+    for obj in spec["objects"]:
+        cls = "GPU" + naming.py_class_name(obj["name"])
+        lines.append(f"class {cls}(GPUObjectBase):")
+        lines.append(f"    _spec_name = {obj['name']!r}")
+        lines.append("")
+        methods = obj.get("methods", [])
+        if not methods:
+            lines.append("    pass")
+            lines.append("")
+        for meth in methods:
+            args = meth.get("args", [])
+            # A default (=None) is only valid for a trailing run of optional args,
+            # since Python forbids a defaulted param before a required one. The
+            # invoker still accepts None for any optional arg.
+            can_default = [False] * len(args)
+            for i in range(len(args) - 1, -1, -1):
+                if args[i].get("optional") and (
+                    i == len(args) - 1 or can_default[i + 1]
+                ):
+                    can_default[i] = True
+                else:
+                    break
+            params = ["self"]
+            names = []
+            for i, arg in enumerate(args):
+                name = naming.py_member_name(arg["name"])
+                if _kw.iskeyword(name):
+                    name += "_"
+                names.append(name)
+                params.append(f"{name}=None" if can_default[i] else name)
+            call_args = ", ".join(names)
+            sig = ", ".join(params)
+            lines.append(f"    def {_py_method(meth['name'])}({sig}):")
+            doc = _docstring(meth.get("doc"), "        ")
+            if doc:
+                lines.append(doc.rstrip("\n"))
+            passthrough = f", {call_args}" if call_args else ""
+            lines.append(
+                f"        return self._invoke({meth['name']!r}{passthrough})"
+            )
+            lines.append("")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _py_method(name: str) -> str:
+    import keyword as _kw
+
+    return name + "_" if _kw.iskeyword(name) else name
+
+
 def write_all(out_dir: Path = GENERATED_DIR) -> list[Path]:
     spec = load_spec()
     mod = _import_module()
@@ -260,6 +455,8 @@ def write_all(out_dir: Path = GENERATED_DIR) -> list[Path]:
         ("flags.py", generate_flags(spec, lib)),
         ("structs.py", generate_structs(spec, ffi)),
         ("constants.py", generate_constants(spec)),
+        ("objects.py", generate_objects(spec, lib, ffi)),
+        ("classes.py", generate_classes(spec)),
     ]:
         path = out_dir / fname
         path.write_text(text)

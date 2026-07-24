@@ -67,8 +67,10 @@ been built.
 | Generate struct descriptors (`_generated/`) | ✅ done (80 structs, 292 members) |
 | Generate constants (`_generated/`) | ✅ done (11 sentinels) |
 | Runtime struct builder (mapping → cffi cdata) | ✅ done (`wgpu/_runtime/`) |
-| Generate object classes + method bodies | ⏳ next |
-| Async future primitive (poll-driven, sniffio) | ⏳ next |
+| Generate method table + `GPU*` classes | ✅ done (23 classes, 146 methods) |
+| Runtime invoker (marshal args, wrap returns, release) | ✅ done (sync path) |
+| Async future primitive (poll-driven, sniffio) | ✅ structure; live-validate in CI |
+| Array / raw-pointer args, struct out-returns | ⏳ next |
 | Buffer mapping (memoryview) | ⏳ planned |
 | Minimal compatibility shim (current wgpu-py API) | ⏳ planned |
 | cibuildwheel matrix (all OS/arch) | ⏳ planned |

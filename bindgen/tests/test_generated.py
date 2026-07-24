@@ -91,3 +91,26 @@ def test_struct_descriptors_match_compiled_types():
             total_fields += 1
     assert len(structs.STRUCTS) == 80
     assert total_fields == 292
+
+
+def test_object_method_table_matches_lib():
+    """Every method's C function exists and its arg count matches the real sig."""
+    objects = _load("objects")
+    from bindgen.ffi_build import NATIVE_DIR, load_compiled
+
+    mod = load_compiled(NATIVE_DIR)
+    lib, ffi = mod.lib, mod.ffi
+
+    n_methods = n_async = 0
+    for obj in objects.OBJECTS.values():
+        for meth in obj.methods:
+            c_args = len(ffi.typeof(getattr(lib, meth.c_func)).args)
+            expected = 1 + sum(2 if a.array else 1 for a in meth.args)
+            if meth.is_async:
+                expected += 1
+                assert ffi.typeof(meth.callback_info_c) is not None
+                n_async += 1
+            assert expected == c_args, meth.c_func
+            n_methods += 1
+    assert n_methods == 146
+    assert n_async == 8

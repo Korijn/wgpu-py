@@ -1,0 +1,44 @@
+"""Base class for all generated wgpu object wrappers."""
+
+from __future__ import annotations
+
+
+class GPUObjectBase:
+    """Wraps a wgpu-native object handle and dispatches its methods.
+
+    Subclasses (generated) set ``_spec_name`` and define one method per C
+    method; the bodies all funnel through :meth:`_invoke`, so there is no
+    per-method hand code. The underlying handle is released when the Python
+    wrapper is garbage-collected.
+    """
+
+    _spec_name: str = ""
+
+    __slots__ = ("_handle", "__weakref__")
+
+    def __init__(self, handle):
+        self._handle = handle
+
+    def _invoke(self, method_name: str, *args):
+        from .api import get_api
+
+        return get_api().invoke(self._spec_name, method_name, self._handle, args)
+
+    def _release(self):
+        """Release the underlying handle exactly once (idempotent)."""
+        handle = getattr(self, "_handle", None)
+        if not handle:
+            return
+        self._handle = None  # prevent double-free before the C call
+        try:
+            from .api import get_api
+
+            get_api().release(self._spec_name, handle)
+        except Exception:
+            pass  # interpreter shutdown / api gone
+
+    def __del__(self):
+        self._release()
+
+    def __repr__(self):
+        return f"<{type(self).__name__} at {self._handle}>"
