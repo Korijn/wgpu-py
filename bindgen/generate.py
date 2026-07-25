@@ -26,6 +26,7 @@ import json
 import keyword
 from pathlib import Path
 
+from . import bridge as from_bridge
 from . import naming, paths
 
 GENERATED_DIR = paths.REPO_ROOT / "wgpu" / "_generated"
@@ -169,14 +170,26 @@ def _resolve_default(mem, kind, ref, lib):
     return default
 
 
-def generate_structs(spec, ffi, lib) -> str:
+def generate_structs(spec, ffi, lib, bridge=None) -> str:
     """Emit declarative descriptors for every struct, validated against the ffi.
 
     Each descriptor records the C type/field names, member kinds, pointer-ness,
     optionality and defaults -- everything a runtime builder needs to turn a
     Python mapping into a filled cffi struct. Every C field name is checked to
     exist on the real compiled type, so a naming drift fails generation.
+
+    When a ``bridge`` is given, each member's public keyword takes its name from
+    the Web IDL instead of from the C field, so the builder consumes mappings
+    written in the public API's vocabulary directly -- no translation layer, and
+    no per-call renaming at runtime.
     """
+    # C struct name -> {C member -> public keyword}, from the IDL.
+    public_names: dict[str, dict[str, str]] = {}
+    if bridge is not None:
+        for (idl_struct, idl_field), c_member in bridge.struct_fields.items():
+            spec_struct = bridge.structs[idl_struct]
+            public = from_bridge.camel_to_snake(idl_field)
+            public_names.setdefault(spec_struct, {})[c_member] = public
     lines = [
         _BANNER,
         '"""Declarative descriptors for every wgpu-native struct.',
@@ -231,7 +244,9 @@ def generate_structs(spec, ffi, lib) -> str:
             members_src.append(
                 "        Member(py={!r}, c={!r}, kind={!r}, ref={!r}, pointer={!r}, "
                 "optional={!r}, default={!r}, array={!r}, count_c={!r}),".format(
-                    naming.py_member_name(mem["name"]),
+                    public_names.get(st["name"], {}).get(
+                        c_field, naming.py_member_name(mem["name"])
+                    ),
                     c_field,
                     kind,
                     ref,
@@ -501,7 +516,10 @@ def _py_method(name: str) -> str:
 
 
 def write_all(out_dir: Path = GENERATED_DIR) -> list[Path]:
+    from . import genapi
+
     spec = load_spec()
+    bridge = from_bridge.build()
     mod = _import_module()
     lib, ffi = mod.lib, mod.ffi
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -512,10 +530,14 @@ def write_all(out_dir: Path = GENERATED_DIR) -> list[Path]:
     for fname, text in [
         ("enums.py", generate_enums(spec, lib)),
         ("flags.py", generate_flags(spec, lib)),
-        ("structs.py", generate_structs(spec, ffi, lib)),
+        ("structs.py", generate_structs(spec, ffi, lib, bridge)),
         ("constants.py", generate_constants(spec)),
         ("objects.py", generate_objects(spec, lib, ffi)),
         ("classes.py", generate_classes(spec)),
+        ("apienums.py", genapi.generate_api_enums(bridge, lib)),
+        ("apiflags.py", genapi.generate_api_flags(bridge)),
+        ("apistructs.py", genapi.generate_api_structs(bridge)),
+        ("apiclasses.py", genapi.generate_api_classes(bridge, spec)),
     ]:
         path = out_dir / fname
         path.write_text(text)
