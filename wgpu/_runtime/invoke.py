@@ -31,7 +31,15 @@ class Invoker:
 
     def marshal_args(self, method, py_args) -> tuple[list, list]:
         """Return ``(c_args, keepalive)`` for the fixed (non-callback) args."""
-        if len(py_args) != len(method.args):
+        missing = len(method.args) - len(py_args)
+        if missing > 0 and all(
+            a.kind == "struct" and a.pointer == "mutable"
+            for a in method.args[len(py_args) :]
+        ):
+            # Out-parameters are allocated by us, never supplied by the caller:
+            # ``adapter.limits`` reaches get_limits() with no arguments at all.
+            py_args = (*py_args, *(None,) * missing)
+        elif len(py_args) != len(method.args):
             raise TypeError(
                 f"{method.py}() takes {len(method.args)} args, got {len(py_args)}"
             )
@@ -56,7 +64,10 @@ class Invoker:
             elem_ctype = self.ffi.getctype(c_sig[pos + 1].item)
             if arg.kind == "object":
                 data = [self._unwrap(it) for it in items]
-            elif arg.kind in ("enum", "bitflag", "prim"):
+            elif arg.kind == "enum":
+                table = self.enums.TO_INT[arg.ref]
+                data = [table[it] for it in items]
+            elif arg.kind in ("bitflag", "prim"):
                 data = [int(it) for it in items]
             else:
                 raise UnsupportedError(
@@ -66,6 +77,13 @@ class Invoker:
             keep.append(cdata)
             return [len(items), cdata]
         if arg.kind == "struct":
+            if arg.pointer == "mutable":
+                # An out-parameter: allocate it, let C fill it in, and read it
+                # back after the call (see ``call``).
+                ptr, k = self.structs.new(arg.ref, {})
+                keep.append(k)
+                keep.append(("out", arg.ref, ptr))
+                return [ptr]
             if value is None and arg.optional:
                 return [self.ffi.NULL]
             ptr, k = self.structs.new(arg.ref, value or {})
@@ -75,8 +93,10 @@ class Invoker:
             return [self._unwrap(value)]
         if arg.kind == "string":
             return [self._string_value(value, keep)]
-        if arg.kind in ("enum", "bitflag"):
-            return [int(value)]
+        if arg.kind == "enum":
+            return [self.enums.TO_INT[arg.ref][value]]
+        if arg.kind == "bitflag":
+            return [self.flags.TO_INT[arg.ref][value]]
         if arg.kind == "prim":
             return [float(value) if _is_float(arg.ref) else int(value)]
         if arg.kind == "c_void":
@@ -128,9 +148,9 @@ class Invoker:
                 )
             return memoryview(self.ffi.buffer(c_ret, size))
         if kind == "enum":
-            return self.enums.BY_SPEC_NAME[ref](c_ret)
+            return self.enums.FROM_INT.get(ref, {}).get(int(c_ret), int(c_ret))
         if kind == "bitflag":
-            return self.flags.BY_SPEC_NAME[ref](c_ret)
+            return int(c_ret)
         if kind == "prim":
             return bool(c_ret) if ref == "bool" else c_ret
         if kind == "struct":
@@ -160,6 +180,12 @@ class Invoker:
                 method, cfunc, self_handle, c_args, keep, pump, caller
             )
         c_ret = cfunc(self_handle, *c_args)
+        outs = [k for k in keep if isinstance(k, tuple) and k and k[0] == "out"]
+        if outs:
+            # Getters that report through an out-parameter (limits, features,
+            # adapter info) return the filled struct, not the status code.
+            _, ref, ptr = outs[0]
+            return self.structs.read(ref, ptr[0])
         return self.wrap_return(method, c_ret, pump, caller, py_args)
 
     def _call_async(self, method, cfunc, self_handle, c_args, keep, pump, caller=None):

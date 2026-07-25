@@ -792,3 +792,10 @@ TO_INT['vertex_step_mode'] = _EnumMap('VertexStepMode', {
     'vertex': 1,
     'instance': 2,
 })
+
+
+#: C-spec enum name -> mapping of C integer back to its string.
+FROM_INT: dict[str, dict[int, str]] = {
+    name: {i: v for v, i in table.items() if isinstance(v, str)}
+    for name, table in TO_INT.items()
+}

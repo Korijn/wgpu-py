@@ -10,7 +10,8 @@ from .errors import ErrorSink
 class Api:
     def __init__(self):
         from wgpu import _native
-        from wgpu._generated import classes, constants, enums, flags, objects, structs
+        from wgpu._generated import apiclasses, apienums, apiflags, constants
+        from wgpu._generated import objects, structs
 
         from .invoke import Invoker
         from .structs import StructBuilder
@@ -19,15 +20,19 @@ class Api:
         self.lib = _native.lib
         self.objects = objects.OBJECTS
 
-        # spec object-name -> generated Python class, for wrapping return values
+        # spec object-name -> public Python class, for wrapping return values
         self.registry = {
             cls._spec_name: cls
-            for cls in vars(classes).values()
+            for cls in vars(apiclasses).values()
             if isinstance(cls, type) and getattr(cls, "_spec_name", "")
         }
 
-        builder = StructBuilder(self.ffi, structs.STRUCTS, constants)
-        self.invoker = Invoker(self.ffi, self.lib, builder, self.registry, enums, flags)
+        builder = StructBuilder(
+            self.ffi, structs.STRUCTS, constants, apienums, apiflags
+        )
+        self.invoker = Invoker(
+            self.ffi, self.lib, builder, self.registry, apienums, apiflags
+        )
 
         # method lookup: (spec_object, method_py) -> Method descriptor
         self._methods = {

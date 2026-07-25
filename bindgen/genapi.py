@@ -111,6 +111,16 @@ def generate_api_enums(b: bridge.Bridge, lib) -> str:
         lines += [f"    {v!r}: {i}," for v, i in pairs]
         lines.append("})")
         lines.append("")
+
+    # The other direction, for values coming *back* out of C. Built from the
+    # same pairs, so the two can never disagree.
+    lines.append("")
+    lines.append("#: C-spec enum name -> mapping of C integer back to its string.")
+    lines.append("FROM_INT: dict[str, dict[int, str]] = {")
+    lines.append("    name: {i: v for v, i in table.items() if isinstance(v, str)}")
+    lines.append("    for name, table in TO_INT.items()")
+    lines.append("}")
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -245,7 +255,7 @@ def generate_api_structs(b: bridge.Bridge) -> str:
     names = sorted(b.idl.structs)
     lines.append("__all__ = [")
     lines += [f"    {n!r}," for n in names]
-    lines += [f"    {n!r}Struct," for n in names]
+    lines += [f"    '{n}Struct'," for n in names]
     lines.append("]")
     lines.append("")
 
@@ -377,7 +387,7 @@ def generate_api_classes(b: bridge.Bridge, spec: dict) -> str:
     lines.append("]")
     lines.append("")
 
-    for cls_name in names:
+    for cls_name in _in_dependency_order(b, names):
         if cls_name in PYTHON_SIDE_CLASSES:
             continue
         interface = b.idl.classes[cls_name]
@@ -389,12 +399,33 @@ def generate_api_classes(b: bridge.Bridge, spec: dict) -> str:
     return "\n".join(lines)
 
 
+def _in_dependency_order(b, names):
+    """Order classes so every base is defined before the classes that use it."""
+    ordered, seen = [], set()
+
+    def visit(name):
+        if name in seen:
+            return
+        seen.add(name)
+        for base in b.idl.classes[name].bases:
+            if base in b.idl.classes:
+                visit(base)
+        ordered.append(name)
+
+    for name in names:
+        visit(name)
+    return ordered
+
+
 def _emit_class(b, cls_name, interface, spec_object, objects, proxy) -> list[str]:
     bases = [
         base
         for base in interface.bases
         if base in b.idl.classes and base != "EventTarget"
     ]
+    # Mixins come first so their methods win resolution, with the object base
+    # last -- the order wgpu-py has always used.
+    bases.sort(key=lambda n: n == "GPUObjectBase")
     if not bases:
         bases = ["Mixin"] if cls_name in MIXIN_REPRESENTATIVE else ["GPUObjectBase"]
     lines = ["", "", f"class {cls_name}({', '.join(bases)}):"]

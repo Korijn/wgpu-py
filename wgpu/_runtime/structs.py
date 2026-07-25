@@ -26,10 +26,13 @@ class StructBuilder:
     testable against a freshly-built extension without importing the package.
     """
 
-    def __init__(self, ffi, structs: dict, constants):
+    def __init__(self, ffi, structs: dict, constants, enums, flags):
         self.ffi = ffi
         self.structs = structs
         self.constants = constants
+        # Public value maps: strings in, C integers out (and back again).
+        self.enums = enums
+        self.flags = flags
 
     # -- public ------------------------------------------------------------
 
@@ -42,6 +45,49 @@ class StructBuilder:
         keepalive: list[Any] = []
         ptr = self._build_into_new(spec_name, mapping or {}, keepalive)
         return ptr, keepalive
+
+    def read(self, spec_name: str, ptr) -> dict:
+        """Read a C struct back into a Python dict of public values.
+
+        The inverse of :meth:`new`, driven by the same descriptors. Needed for
+        the getters that report through an out-parameter -- ``adapter.limits``,
+        ``adapter.info``, ``device.features`` -- where wgpu-native fills in a
+        struct the caller allocated.
+        """
+        desc = self.structs[spec_name]
+        out: dict = {}
+        for mem in desc.members:
+            value = getattr(ptr, mem.c, None)
+            if mem.array:
+                out[mem.py] = self._read_array(ptr, mem)
+            elif mem.kind == "string":
+                out[mem.py] = _string(self.ffi, value)
+            elif mem.kind == "enum":
+                out[mem.py] = self.enums.FROM_INT.get(mem.ref, {}).get(
+                    int(value), int(value)
+                )
+            elif mem.kind == "bitflag":
+                out[mem.py] = int(value)
+            elif mem.kind == "struct":
+                child = value[0] if mem.pointer else value
+                out[mem.py] = self.read(mem.ref, child)
+            elif mem.kind == "prim":
+                out[mem.py] = bool(value) if mem.ref == "bool" else value
+            elif mem.kind == "object":
+                out[mem.py] = value if value else None
+        return out
+
+    def _read_array(self, ptr, mem):
+        n = getattr(ptr, mem.count_c, 0)
+        data = getattr(ptr, mem.c)
+        if not n or not data:
+            return []
+        if mem.kind == "enum":
+            table = self.enums.FROM_INT.get(mem.ref, {})
+            return [table.get(int(data[i]), int(data[i])) for i in range(n)]
+        if mem.kind == "struct":
+            return [self.read(mem.ref, data[i]) for i in range(n)]
+        return [data[i] for i in range(n)]
 
     # -- internals ---------------------------------------------------------
 
@@ -70,7 +116,11 @@ class StructBuilder:
         field = mem.c
         if mem.array:
             self._set_array(ptr, mem, value, keep)
-        elif mem.kind in ("prim", "enum", "bitflag"):
+        elif mem.kind == "enum":
+            setattr(ptr, field, self.enums.TO_INT[mem.ref][value])
+        elif mem.kind == "bitflag":
+            setattr(ptr, field, self.flags.TO_INT[mem.ref][value])
+        elif mem.kind == "prim":
             setattr(ptr, field, self._scalar(mem, value))
         elif mem.kind == "string":
             self._set_string(getattr(ptr, field), value, keep)
@@ -153,7 +203,10 @@ class StructBuilder:
             arr = self.ffi.new(
                 f"{elem_ctype}[{n}]", [it or self.ffi.NULL for it in items]
             )
-        else:  # enum / prim array
+        elif mem.kind == "enum":  # array of enums, given as public strings
+            table = self.enums.TO_INT[mem.ref]
+            arr = self.ffi.new(f"{elem_ctype}[{n}]", [table[it] for it in items])
+        else:  # prim array
             arr = self.ffi.new(f"{elem_ctype}[{n}]", [int(it) for it in items])
         keep.append(arr)
         setattr(ptr, mem.c, arr)
@@ -174,3 +227,10 @@ class StructBuilder:
             if d.startswith("0x"):
                 return int(d, 16)
         return _MISSING
+
+
+def _string(ffi, view) -> str:
+    """Decode a ``WGPUStringView`` (data + length, not NUL-terminated)."""
+    if not view.data:
+        return ""
+    return ffi.string(view.data, view.length).decode("utf-8", "replace")

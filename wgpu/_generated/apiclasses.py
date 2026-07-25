@@ -152,7 +152,21 @@ class GPUCommandBuffer(GPUObjectBase):
 
 
 
-class GPUCommandEncoder(GPUObjectBase, GPUCommandsMixin, GPUDebugCommandsMixin):
+class GPUCommandsMixin(Mixin):
+    """GPUCommandsMixin -- see the WebGPU specification."""
+
+    pass
+
+
+
+class GPUDebugCommandsMixin(Mixin):
+    """GPUDebugCommandsMixin -- see the WebGPU specification."""
+
+    pass
+
+
+
+class GPUCommandEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUObjectBase):
     """GPUCommandEncoder -- see the WebGPU specification."""
     _spec_name = 'command_encoder'
 
@@ -194,14 +208,7 @@ class GPUCommandEncoder(GPUObjectBase, GPUCommandsMixin, GPUDebugCommandsMixin):
 
 
 
-class GPUCommandsMixin(Mixin):
-    """GPUCommandsMixin -- see the WebGPU specification."""
-
-    pass
-
-
-
-class GPUComputePassEncoder(GPUObjectBase, GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCommandsMixin):
+class GPUComputePassEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCommandsMixin, GPUObjectBase):
     """GPUComputePassEncoder -- see the WebGPU specification."""
     _spec_name = 'compute_pass_encoder'
 
@@ -223,16 +230,16 @@ class GPUComputePassEncoder(GPUObjectBase, GPUCommandsMixin, GPUDebugCommandsMix
 
 
 
-class GPUComputePipeline(GPUObjectBase, GPUPipelineBase):
-    """GPUComputePipeline -- see the WebGPU specification."""
-    _spec_name = 'compute_pipeline'
+class GPUPipelineBase(Mixin):
+    """GPUPipelineBase -- see the WebGPU specification."""
 
     pass
 
 
 
-class GPUDebugCommandsMixin(Mixin):
-    """GPUDebugCommandsMixin -- see the WebGPU specification."""
+class GPUComputePipeline(GPUPipelineBase, GPUObjectBase):
+    """GPUComputePipeline -- see the WebGPU specification."""
+    _spec_name = 'compute_pipeline'
 
     pass
 
@@ -342,13 +349,6 @@ class GPUDevice(GPUObjectBase):
 
 
 
-class GPUPipelineBase(Mixin):
-    """GPUPipelineBase -- see the WebGPU specification."""
-
-    pass
-
-
-
 class GPUPipelineLayout(GPUObjectBase):
     """GPUPipelineLayout -- see the WebGPU specification."""
     _spec_name = 'pipeline_layout'
@@ -409,7 +409,14 @@ class GPURenderBundle(GPUObjectBase):
 
 
 
-class GPURenderBundleEncoder(GPUObjectBase, GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCommandsMixin, GPURenderCommandsMixin):
+class GPURenderCommandsMixin(Mixin):
+    """GPURenderCommandsMixin -- see the WebGPU specification."""
+
+    pass
+
+
+
+class GPURenderBundleEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCommandsMixin, GPURenderCommandsMixin, GPUObjectBase):
     """GPURenderBundleEncoder -- see the WebGPU specification."""
     _spec_name = 'render_bundle_encoder'
 
@@ -419,14 +426,7 @@ class GPURenderBundleEncoder(GPUObjectBase, GPUCommandsMixin, GPUDebugCommandsMi
 
 
 
-class GPURenderCommandsMixin(Mixin):
-    """GPURenderCommandsMixin -- see the WebGPU specification."""
-
-    pass
-
-
-
-class GPURenderPassEncoder(GPUObjectBase, GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCommandsMixin, GPURenderCommandsMixin):
+class GPURenderPassEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCommandsMixin, GPURenderCommandsMixin, GPUObjectBase):
     """GPURenderPassEncoder -- see the WebGPU specification."""
     _spec_name = 'render_pass_encoder'
 
@@ -464,7 +464,7 @@ class GPURenderPassEncoder(GPUObjectBase, GPUCommandsMixin, GPUDebugCommandsMixi
 
 
 
-class GPURenderPipeline(GPUObjectBase, GPUPipelineBase):
+class GPURenderPipeline(GPUPipelineBase, GPUObjectBase):
     """GPURenderPipeline -- see the WebGPU specification."""
     _spec_name = 'render_pipeline'
 
