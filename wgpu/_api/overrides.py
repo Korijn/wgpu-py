@@ -223,3 +223,28 @@ buffer_map = deprecated_sync_or_async("map")
 def buffer_get_mapped_range(self, offset=0, size=None):
     """A memoryview onto the mapped range. Invalid once the buffer is unmapped."""
     return self._call("get_mapped_range", *_map_range(self, offset, size))
+
+
+# -- shader compilation info -------------------------------------------------
+#
+# wgpu-native leaves wgpuShaderModuleGetCompilationInfo unimplemented, and a
+# shader that fails to compile raises at create_shader_module() anyway, so a
+# module you can call this on compiled cleanly. wgpu-py has always reported
+# that as "no messages" rather than failing.
+
+
+def shader_module_get_compilation_info_async(self):
+    """The messages produced while compiling this shader module."""
+    from wgpu._runtime.awaitable import completed
+
+    return completed([])
+
+
+def shader_module_get_compilation_info_sync(self):
+    """The messages produced while compiling this shader module."""
+    return []
+
+
+shader_module_get_compilation_info = deprecated_sync_or_async(
+    "get_compilation_info"
+)

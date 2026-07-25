@@ -635,15 +635,7 @@ class GPUShaderModule(GPUObjectBase):
     """GPUShaderModule -- see the WebGPU specification."""
     _spec_name = 'shader_module'
 
-    def get_compilation_info_async(self) -> GPUCompilationInfo:
-        """GPUShaderModule.getCompilationInfo -- see the WebGPU specification."""
-        return self._promise(_unimplemented('wgpuShaderModuleGetCompilationInfo'))
-
-    def get_compilation_info_sync(self) -> GPUCompilationInfo:
-        """GPUShaderModule.getCompilationInfo -- see the WebGPU specification."""
-        return self._await(_unimplemented('wgpuShaderModuleGetCompilationInfo'))
-
-    get_compilation_info = _ov.deprecated_sync_or_async('get_compilation_info')
+    get_compilation_info = _ov.shader_module_get_compilation_info
 
 
 

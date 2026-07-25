@@ -99,6 +99,10 @@ class StructBuilder:
         return ptr
 
     def _fill(self, ptr, desc, mapping: dict, keep: list):
+        if any("-" in k for k in mapping):
+            # wgpu-py has always accepted the WebGPU spec's hyphenated spelling
+            # of struct fields ("max-bind-groups") alongside the Pythonic one.
+            mapping = {k.replace("-", "_"): v for k, v in mapping.items()}
         if desc.adapters:
             from wgpu._api import adapt
 
