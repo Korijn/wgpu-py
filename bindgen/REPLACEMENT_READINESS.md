@@ -1,94 +1,112 @@
 # Replacement readiness
 
-Can the generated implementation replace the classic one (`wgpu/_classes.py` +
-`wgpu/backends/wgpu_native/`)? This is the gap analysis, measured rather than
-estimated, so the decision to delete the old code is evidence-based.
+Can the generated implementation replace the classic one? This is the measured
+status, so the decision to delete the old code stays evidence-based.
 
-**Short answer: not yet — but the hard part is done.** The engine (bindings,
-marshalling, async, errors, lifetimes) is complete and validated against a real
-driver. What remains is *breadth of the public surface*, which is mostly thin
-adaptation over things that already exist.
+**The public API is now generated end to end, and it performs.** What remains
+is porting the historical `tests/` suite, which still imports the old module
+layout.
 
-## Measured coverage
+## How it is built
 
-| Area | Status |
+Two specs, each answering the question it is actually authoritative for:
+
+| spec | source | drives |
+| --- | --- | --- |
+| `webgpu.json` | wgpu-native submodule | the C API: functions, structs, enum integers |
+| `webgpu.idl` | W3C, vendored in `bindgen/resources` | the public API: names, enum *strings*, defaults |
+
+`bindgen/bridge.py` connects them with a single normalising rule, and **nothing
+goes unmatched**: 30 enums / 268 enum values / 50 structs / 185 fields / 20
+classes / 52 methods resolve automatically. The genuine divergences are
+declared rather than guessed — web-only names, four struct aliases, and 11
+fields whose *shape* differs. A spec bump that breaks a correspondence fails
+the build (`test_spec_bridge.py`) instead of quietly emitting less.
+
+Because the mapping is resolved at generation time, the runtime does no name
+translation: generated code already speaks C-side member names and integers.
+
+## The enum question, settled
+
+Public enums are **strings**, as the web API and existing wgpu-py code expect:
+
+```python
+wgpu.TextureFormat.rgba8unorm == "rgba8unorm"     # True
+wgpu.AddressMode.clamp_to_edge == "clamp-to-edge" # True
+```
+
+This is not a judgement call — the generated enums and flags are
+content-identical to the hand-maintained ones: 34 enum classes, 5 flag classes,
+every member, every value. pygfx and any code reading these constants as
+strings keeps working. `EnumMap`/`FlagMap` convert to C integers on a plain
+dict lookup, with no Python-level call on the success path.
+
+## Coverage
+
+| area | status |
 | --- | --- |
-| C API surface | ✅ 228 functions bound |
-| Spec objects / methods | ✅ 23 objects, 146 methods generated |
-| Enums / flags / structs / constants | ✅ 54 / 5 / 80 / 11 generated |
-| Old public **methods** with no generated counterpart | ✅ only **5** (all conveniences: `read_mapped`, `write_mapped`, `create_buffer_with_data`, `read_buffer`, `read_texture`) — 4 already in the shim |
-| Validation errors → Python exceptions | ✅ implemented (previously **aborted the process**) |
-| Async (`.wait()` and `await`) | ✅ works on a real device |
-| Buffer mapping, data round-trip | ✅ byte-exact on lavapipe |
-| Object lifetimes / release | ✅ release-on-GC, ancestry kept alive |
+| C API surface | 228 functions bound |
+| Public classes | generated from the IDL, signatures match the classic ones |
+| Enums / flags / structs | 34 / 5 / 60, content-identical to classic |
+| Validation errors | raised as `GPUValidationError`, not process aborts |
+| Async | `await`, `then()`, and `sync_wait()`, on asyncio and trio |
+| Compute pipeline | verified end to end on lavapipe: WGSL, bind groups, dispatch, byte-exact readback |
+| Hand-written surface | ~6 methods and ~14 properties, each a documented spec divergence |
 
-Crucially, the capabilities behind the remaining gaps are **already generated**:
+## Performance
 
-* canvas/presentation: `surface.configure / get_current_texture / present / get_capabilities / unconfigure`
-* every old texture property is backed by a generated getter (`get_width`, `get_format`, …)
-* `adapter.get_info / get_limits / get_features`, `query_set.get_count / get_type`,
-  `device.get_limits / get_features / push_error_scope / pop_error_scope`
+Same wgpu-native build, same machine, same harness; only the Python layer
+differs (`python -m bindgen.tests.benchmark`).
 
-So the work left is wrapping, not implementing.
+| case | classic | generated | |
+| --- | ---: | ---: | --- |
+| device startup | 794.2 ms | **81.1 ms** | **9.8x faster** |
+| write_buffer | 20.2 us | **15.0 us** | 1.35x faster |
+| record_pass (submit) | 110.5 us | **87.0 us** | 1.27x faster |
+| dispatch_workgroups | 2.22 us | 2.35 us | 1.06x slower |
+| create_bind_group_layout | 22.1 us | 24.4 us | 1.11x slower |
+| set_bind_group | 3.46 us | 4.50 us | 1.30x slower |
+| create_buffer | 10.3 us | 14.8 us | 1.44x slower |
+| property reads | 0.12 us | 0.27 us | 2.2x slower |
 
-## Gaps to close before deleting the old code
+Startup dominates because the library is statically linked: no download, no
+runtime version probe, far less import work.
 
-1. **Properties (64)** across the mapped classes — `label`, `uid`, `size`,
-   `usage`, `map_state`, texture dimensions, `device.limits/features/queue/adapter`,
-   `adapter.info/limits/features/summary`, `query_set.count/type`. Almost all map
-   to an existing generated getter, so these can be **generated** rather than
-   hand-written.
+The hot path is at parity. Getting there needed two changes that profiling
+pointed at directly — 97% of per-call time was Python marshalling, with the C
+call itself at 3%:
 
-2. **19 classes with no spec object**:
-   * `GPU` — the `wgpu.gpu` entrypoint (`request_adapter_sync/async`,
-     `get_preferred_canvas_format`, `enumerate_adapters_*`).
-   * `GPUCanvasContext` (8 methods) — the rendercanvas integration, on top of the
-     generated `surface` object. Needed by every example and by pygfx.
-   * Error classes — `GPUError`, `GPUValidationError`, `GPUOutOfMemoryError`,
-     `GPUInternalError` now exist in `wgpu/_runtime/errors.py`; `GPUPipelineError`
-     and the public export names still need wiring.
-   * Info objects: `GPUAdapterInfo`, `GPUCompilationInfo`, `GPUCompilationMessage`,
-     `GPUDeviceLostInfo`.
-   * `GPUPromise`, `DrawCancelled`, and the mixins (`GPUObjectBase`,
-     `GPUCommandsMixin`, `GPUBindingCommandsMixin`, `GPUDebugCommandsMixin`,
-     `GPURenderCommandsMixin`, `GPUPipelineBase`) — exported today, so anything
-     importing them by name would break.
+* **Compiled per-method calls.** The C function, its cffi signature and each
+  argument's converter are resolved once per method instead of on every call.
+* **Cached immutable properties.** A buffer's size, a texture's format and so on
+  are fixed at creation, so they are read once rather than crossing FFI on
+  every access in a render loop.
 
-3. **Module-level surface (~130 names)** — `wgpu.gpu`, the ~60 struct classes,
-   `enums`/`flags`/`structs` modules, `diagnostics`, `logger`,
-   `get_default_device`, `preconfigure_default_device`, `resources`, `backends`,
-   `classes`, `rendercanvas_context_hook`, `version_info`.
+The remaining cold-path gaps (`create_buffer`, `set_bind_group`) are descriptor
+marshalling through the generic struct builder; the same compilation technique
+would apply if they mattered, but they run once per resource, not per frame.
 
-4. **String-enum semantics.** Classic enums are *strings*
-   (`wgpu.TextureFormat.rgba8unorm == "rgba8unorm"`), while generated ones are
-   `IntEnum`. The shim already *accepts* classic spellings, but code that reads
-   `wgpu.TextureFormat.rgba8unorm` and expects a string — pygfx does this — would
-   see an int. This is a deliberate API decision to make, not just a port.
+Note that creating and dropping GPU objects in a loop gets steadily slower in
+**both** implementations — the cost is inside wgpu-native's resource
+reclamation, not the bindings. The benchmark settles between repeats so it
+measures the Python layer rather than accumulated garbage.
 
-5. **`wgpu-native` extras** (~12 public functions): `set_instance_extras`,
-   `multi_draw_indirect*`, `create_statistics_query_set`,
-   `begin/end_pipeline_statistics_query`, `write_timestamp`, `get_wgpu_instance`,
-   push constants. All exist in the low-level lib (they come from `wgpu.h`), so
-   these are wrappers.
+## What is left
 
-6. **Peripheral**: `utils.compute_with_buffers`, the imgui helper, the
-   PyInstaller hook, and the diagnostics subsystem.
+1. **Port `tests/`** (the acceptance gate below). The 24 historical test files
+   still import `wgpu.backends.wgpu_native` and `wgpu._async`, which no longer
+   exist. The suite's *content* is what matters and should be kept; only the
+   imports and a few old-internals tests need updating.
+2. **Delete the classic implementation** once that suite is green.
+3. **CI**: the cibuildwheel matrix (still the last piece of the original goal).
+4. wgpu-native extras (`set_instance_extras`, `multi_draw_indirect*`, push
+   constants) and the diagnostics subsystem.
 
 ## Acceptance gate
 
-The existing test suite is the objective gate. Today it passes **235/236**
-against the classic implementation driving our from-source library. The rule:
-
 > Delete the classic implementation only once the historical `tests/` suite
-> passes against the **generated** implementation.
+> passes against the generated one.
 
-That converts "are we compatible?" from a judgement call into a number, and it
-protects downstream users (pygfx) from silent regressions.
-
-## Suggested order
-
-1. Generate properties from the spec getters (closes gap 1 mechanically).
-2. Decide the string-vs-int enum question (gap 4) — it shapes everything else.
-3. `GPU` entrypoint + `GPUCanvasContext` + module-level exports (gaps 2, 3).
-4. Extras and peripherals (gaps 5, 6).
-5. Run `tests/` against the new layer; fix until green; then delete.
+That suite encodes years of hard-won behaviour — it is what caught the
+process-abort bug — so it should be ported, not discarded, and it stays the
+objective measure of whether this is a faithful replacement.
