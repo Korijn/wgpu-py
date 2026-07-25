@@ -99,6 +99,13 @@ class StructBuilder:
         return ptr
 
     def _fill(self, ptr, desc, mapping: dict, keep: list):
+        if desc.adapters:
+            from wgpu._api import adapt
+
+            mapping = adapt.reshape(self, desc, mapping, keep)
+        chain = mapping.pop("_chain", None) if "_chain" in mapping else None
+        if chain is not None:
+            self._chain(ptr, chain, keep)
         unknown = set(mapping) - {m.py for m in desc.members}
         if unknown:
             raise TypeError(f"{desc.c_name}: unexpected fields {sorted(unknown)}")
@@ -127,7 +134,7 @@ class StructBuilder:
         elif mem.kind == "string":
             self._set_string(getattr(ptr, field), value, keep)
         elif mem.kind == "object":
-            setattr(ptr, field, value if value is not None else self.ffi.NULL)
+            setattr(ptr, field, self._handle(value))
         elif mem.kind == "struct":
             self._set_struct(ptr, mem, value, keep)
         elif mem.kind == "callback":
@@ -136,6 +143,20 @@ class StructBuilder:
             return  # not built from plain input mappings
         else:  # pragma: no cover
             raise TypeError(f"cannot marshal member kind {mem.kind!r} ({mem.c})")
+
+    def _chain(self, ptr, chain, keep: list):
+        """Attach an extension struct to ``ptr``'s ``nextInChain``.
+
+        C expresses several web-level fields as chained structs, each tagged
+        with an ``sType`` so the implementation knows what it received.
+        """
+        spec_name, mapping = chain
+        desc = self.structs[spec_name]
+        child = self.ffi.new(desc.c_name + " *")
+        keep.append(child)
+        child.chain.sType = desc.s_type
+        self._fill(child, desc, mapping, keep)
+        ptr.nextInChain = self.ffi.addressof(child.chain)
 
     # -- per-kind helpers --------------------------------------------------
 
@@ -146,6 +167,12 @@ class StructBuilder:
             return value
         # allow passing enum/flag members by their generated member name
         raise TypeError(f"{mem.c}: expected number, got {type(value).__name__}")
+
+    def _handle(self, value):
+        """The C handle behind a public object, or NULL."""
+        if value is None:
+            return self.ffi.NULL
+        return getattr(value, "_handle", value)
 
     def _set_string(self, view, value, keep: list):
         if value is None:
@@ -203,7 +230,7 @@ class StructBuilder:
                 self._fill(self.ffi.addressof(arr, i), child_desc, item or {}, keep)
         elif mem.kind == "object":  # array of handles
             arr = self.ffi.new(
-                f"{elem_ctype}[{n}]", [it or self.ffi.NULL for it in items]
+                f"{elem_ctype}[{n}]", [self._handle(it) for it in items]
             )
         elif mem.kind == "enum":  # array of enums, given as public strings
             table = self.enums.TO_INT[mem.ref]

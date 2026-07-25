@@ -185,11 +185,18 @@ def generate_structs(spec, ffi, lib, bridge=None) -> str:
     """
     # C struct name -> {C member -> public keyword}, from the IDL.
     public_names: dict[str, dict[str, str]] = {}
+    adapters: dict[str, list[tuple[str, str]]] = {}
     if bridge is not None:
         for (idl_struct, idl_field), c_member in bridge.struct_fields.items():
             spec_struct = bridge.structs[idl_struct]
             public = from_bridge.camel_to_snake(idl_field)
             public_names.setdefault(spec_struct, {})[c_member] = public
+        for (idl_struct, idl_field), adapter in bridge.shape_adapted.items():
+            spec_struct = bridge.structs.get(idl_struct)
+            if spec_struct is None:
+                continue  # a field of a web-only struct
+            public = from_bridge.camel_to_snake(idl_field)
+            adapters.setdefault(spec_struct, []).append((public, adapter))
     lines = [
         _BANNER,
         '"""Declarative descriptors for every wgpu-native struct.',
@@ -221,6 +228,11 @@ def generate_structs(spec, ffi, lib, bridge=None) -> str:
         "    c_name: str",
         "    category: str    # extensible|standalone|extension|extensible_callback_arg",
         "    members: tuple = field(default_factory=tuple)",
+        "    # (public field, adapter name) for fields whose *shape* differs",
+        "    # between the Web and C specs; see wgpu._api.adapt.",
+        "    adapters: tuple = field(default_factory=tuple)",
+        "    # The WGPUSType tag, for structs that chain onto another.",
+        "    s_type: int = 0",
         "",
         "",
         "STRUCTS: dict[str, StructDescriptor] = {}",
@@ -257,9 +269,17 @@ def generate_structs(spec, ffi, lib, bridge=None) -> str:
                     count_c,
                 )
             )
+        s_type = 0
+        if st.get("type") == "extension":
+            # Chained structs carry a tag so C knows what they are.
+            s_type = int(getattr(lib, naming.c_enum_value("s_type", st["name"])))
         lines.append(f"STRUCTS[{st['name']!r}] = StructDescriptor(")
         lines.append(f"    c_name={c_name!r},")
         lines.append(f"    category={st.get('type')!r},")
+        if adapters.get(st["name"]):
+            lines.append(f"    adapters={tuple(sorted(adapters[st['name']]))!r},")
+        if s_type:
+            lines.append(f"    s_type={s_type},")
         if members_src:
             lines.append("    members=(")
             lines.extend(members_src)
