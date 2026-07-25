@@ -119,16 +119,46 @@ structural -- stop making one Python call per GPU command:
 * **`multi_draw_indirect`** (a wgpu-native extra, not yet wrapped);
 * **batched setters** that take an array of draw parameters and loop in C.
 
+## Porting the historical suite
+
+In progress. The suite now collects and runs against the generated
+implementation; **72 tests pass**, 121 fail, 21 error, and 2 files still crash.
+
+It has already earned its keep twice, by finding bugs nothing else did:
+
+* **`await buffer.map_async()` hung forever.** wgpu-native only runs completion
+  callbacks while its event queue is processed, and only `sync_wait()` drove
+  that. Fixed: the awaiting task pumps between naps.
+* **35 C functions abort the process.** wgpu-native declares the full WebGPU
+  surface but leaves 35 functions `unimplemented!()`, and a Rust panic cannot
+  unwind across FFI. Four test files died outright. Fixed: the generator reads
+  wgpu-native's own `unimplemented.rs` and emits a guard.
+
+### Remaining failure clusters
+
+Grouped by cause, largest first -- most are one fix covering many tests:
+
+1. **Tests probing classic internals** (~14): `wgpu.backends.wgpu_native._api`,
+   `._helpers`, `.lib_path`, `.__version__`. `lib_path` is meaningless now the
+   library is statically linked; `__version__` should be exposed. These tests
+   need porting, not the implementation fixing.
+2. **Native-only feature names** (~10): `vertex-writable-storage` and friends
+   are wgpu-native extras absent from the W3C IDL, so `FeatureName` rejects
+   them. The enum map needs wgpu-native's additions.
+3. **SPIR-V shader source** (~4): `create_shader_module(code=<bytes>)` needs the
+   `WGPUShaderSourceSPIRV` path, which takes a word count and a `uint32` array
+   rather than a string.
+4. **Crashing files** (2): `test_wgpu_native_buffer.py`,
+   `test_wgpu_occlusion_query.py` -- not yet diagnosed.
+5. Assorted single failures: limit-validation error types, canvas context
+   details, diagnostics table contents.
+
 ## What is left
 
-1. **Port `tests/`** (the acceptance gate below). The 24 historical test files
-   still import `wgpu.backends.wgpu_native` and `wgpu._async`, which no longer
-   exist. The suite's *content* is what matters and should be kept; only the
-   imports and a few old-internals tests need updating.
-2. **Delete the classic implementation** once that suite is green.
+1. Finish the suite port (above).
+2. **Delete the classic implementation** once it is green.
 3. **CI**: the cibuildwheel matrix (still the last piece of the original goal).
-4. wgpu-native extras (`set_instance_extras`, `multi_draw_indirect*`, push
-   constants) and the diagnostics subsystem.
+4. Push constants and the diagnostics subsystem.
 
 ## Acceptance gate
 
