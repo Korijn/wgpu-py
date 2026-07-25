@@ -178,3 +178,34 @@ def binding_commands_set_immediates(self, range_offset, data, data_offset=0, dat
         data_size = view.nbytes - data_offset
     chunk = view[data_offset : data_offset + data_size]
     return self._call("set_immediate_data", range_offset, chunk, chunk.nbytes)
+
+
+# -- buffer mapping ----------------------------------------------------------
+#
+# The spec says an omitted ``size`` means "to the end of the buffer". C has a
+# whole-size sentinel for this, but wgpu-native rejects it for mapping, so the
+# size is resolved here, where the buffer's size is known.
+
+
+def _map_range(buffer, offset, size):
+    if size is None:
+        size = buffer.size - offset
+    return int(offset), int(size)
+
+
+def buffer_map_async(self, mode, offset=0, size=None):
+    """Map the buffer for reading or writing, asynchronously."""
+    return self._call("map_async", mode, *_map_range(self, offset, size))
+
+
+def buffer_map_sync(self, mode, offset=0, size=None):
+    """Blocking version of `map_async()`."""
+    return buffer_map_async(self, mode, offset, size).wait()
+
+
+buffer_map = deprecated_sync_or_async("map")
+
+
+def buffer_get_mapped_range(self, offset=0, size=None):
+    """A memoryview onto the mapped range. Invalid once the buffer is unmapped."""
+    return self._call("get_mapped_range", *_map_range(self, offset, size))

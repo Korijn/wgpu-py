@@ -315,6 +315,10 @@ HAND_WRITTEN = {
     ("GPUBindingCommandsMixin", "setBindGroup"),
     # The IDL slices the source data; C takes a pointer plus a byte count.
     ("GPUBindingCommandsMixin", "setImmediates"),
+    # The spec defines an omitted size as "the rest of the buffer", which is a
+    # value only the Python side knows -- wgpu-native rejects the C sentinel.
+    ("GPUBuffer", "mapAsync"),
+    ("GPUBuffer", "getMappedRange"),
 }
 
 #: Attributes with no plain C getter behind them: they either aggregate several
@@ -465,7 +469,7 @@ def _emit_class(b, cls_name, interface, spec_object, objects, proxy) -> list[str
     )
     for fn_name, line in interface.functions.items():
         if (cls_name, fn_name) in HAND_WRITTEN:
-            body += _emit_override_hook(cls_name, fn_name)
+            body += _emit_override_hook(cls_name, fn_name, line)
             continue
         spec_method = b.methods.get((proxy, fn_name)) or bridge.camel_to_snake(
             fn_name
@@ -493,10 +497,22 @@ def _override_prefix(cls_name: str) -> str:
     return bridge.camel_to_snake(name)
 
 
-def _emit_override_hook(cls_name, fn_name) -> list[str]:
-    """Bind a hand-written implementation into the generated class."""
+def _emit_override_hook(cls_name, fn_name, line="") -> list[str]:
+    """Bind a hand-written implementation into the generated class.
+
+    A promise-returning method needs its whole family bound, not just one name.
+    """
     py = bridge.camel_to_snake(fn_name)
-    return [f"    {py} = _ov.{_override_prefix(cls_name)}_{py}", ""]
+    prefix = _override_prefix(cls_name)
+    if line.strip().startswith("Promise<") and py.endswith("_async"):
+        base = py[: -len("_async")]
+        return [
+            f"    {base}_async = _ov.{prefix}_{base}_async",
+            f"    {base}_sync = _ov.{prefix}_{base}_sync",
+            f"    {base} = _ov.{prefix}_{base}",
+            "",
+        ]
+    return [f"    {py} = _ov.{prefix}_{py}", ""]
 
 
 def _emit_attr_hook(cls_name, attr_name) -> list[str]:

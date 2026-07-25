@@ -94,10 +94,18 @@ class Invoker:
         if arg.kind == "string":
             return [self._string_value(value, keep)]
         if arg.kind == "enum":
-            return [self.enums.TO_INT[arg.ref][value]]
+            # None means "undefined", which every WebGPU enum maps to zero.
+            return [0 if value is None else self.enums.TO_INT[arg.ref][value]]
         if arg.kind == "bitflag":
-            return [self.flags.TO_INT[arg.ref][value]]
+            return [0 if value is None else self.flags.TO_INT[arg.ref][value]]
         if arg.kind == "prim":
+            if value is None:
+                # The only numeric argument WebGPU lets you omit is a size, and
+                # omitting it means "the rest of the resource". C spells that as
+                # an all-ones sentinel (WGPU_WHOLE_SIZE / WGPU_WHOLE_MAP_SIZE),
+                # whose width depends on the parameter -- so take it from the
+                # real C signature rather than hardcoding 32 vs 64 bits.
+                return [(1 << (8 * self.ffi.sizeof(c_sig[pos]))) - 1]
             return [float(value) if _is_float(arg.ref) else int(value)]
         if arg.kind == "c_void":
             # Raw data: accept any buffer-like object (bytes, bytearray,

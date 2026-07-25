@@ -104,12 +104,14 @@ class StructBuilder:
             raise TypeError(f"{desc.c_name}: unexpected fields {sorted(unknown)}")
         for mem in desc.members:
             value = mapping.get(mem.py, _MISSING)
+            if value is None:
+                # An explicit None means "not specified", exactly like omitting
+                # the field -- which is what ``undefined`` means on the web.
+                value = _MISSING
             if value is _MISSING:
                 value = self._default(mem)
                 if value is _MISSING:
                     continue  # leave zero / NULL
-            elif value is None and mem.optional:
-                continue
             self._set_member(ptr, mem, value, keep)
 
     def _set_member(self, ptr, mem, value, keep: list):

@@ -98,19 +98,11 @@ class GPUBuffer(GPUObjectBase):
     """GPUBuffer -- see the WebGPU specification."""
     _spec_name = 'buffer'
 
-    def map_async(self, mode: flags.MapModeFlags, offset: int = 0, size: int | None = None) -> None:
-        """GPUBuffer.mapAsync -- see the WebGPU specification."""
-        return self._promise(self._call('map_async', mode, offset, size))
+    map_async = _ov.buffer_map_async
+    map_sync = _ov.buffer_map_sync
+    map = _ov.buffer_map
 
-    def map_sync(self, mode: flags.MapModeFlags, offset: int = 0, size: int | None = None) -> None:
-        """GPUBuffer.mapAsync -- see the WebGPU specification."""
-        return self._await(self._call('map_async', mode, offset, size))
-
-    map = _ov.deprecated_sync_or_async('map')
-
-    def get_mapped_range(self, offset: int = 0, size: int | None = None) -> ArrayLike:
-        """GPUBuffer.getMappedRange -- see the WebGPU specification."""
-        return self._call('get_mapped_range', offset, size)
+    get_mapped_range = _ov.buffer_get_mapped_range
 
     def unmap(self) -> None:
         """GPUBuffer.unmap -- see the WebGPU specification."""
