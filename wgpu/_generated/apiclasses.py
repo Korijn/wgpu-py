@@ -115,12 +115,12 @@ class GPUBuffer(GPUObjectBase):
     @property
     def size(self) -> int:
         """GPUBuffer.size"""
-        return self._get('get_size')
+        return self._get_cached('get_size')
 
     @property
     def usage(self) -> int:
         """GPUBuffer.usage"""
-        return self._get('get_usage')
+        return self._get_cached('get_usage')
 
     map_state = _ov.buffer_map_state
 
@@ -350,12 +350,12 @@ class GPUQuerySet(GPUObjectBase):
     @property
     def type(self) -> enums.QueryTypeEnum:
         """GPUQuerySet.type"""
-        return self._get('get_type')
+        return self._get_cached('get_type')
 
     @property
     def count(self) -> int:
         """GPUQuerySet.count"""
-        return self._get('get_count')
+        return self._get_cached('get_count')
 
 
 
@@ -519,42 +519,42 @@ class GPUTexture(GPUObjectBase):
     @property
     def width(self) -> int:
         """GPUTexture.width"""
-        return self._get('get_width')
+        return self._get_cached('get_width')
 
     @property
     def height(self) -> int:
         """GPUTexture.height"""
-        return self._get('get_height')
+        return self._get_cached('get_height')
 
     @property
     def depth_or_array_layers(self) -> int:
         """GPUTexture.depthOrArrayLayers"""
-        return self._get('get_depth_or_array_layers')
+        return self._get_cached('get_depth_or_array_layers')
 
     @property
     def mip_level_count(self) -> int:
         """GPUTexture.mipLevelCount"""
-        return self._get('get_mip_level_count')
+        return self._get_cached('get_mip_level_count')
 
     @property
     def sample_count(self) -> int:
         """GPUTexture.sampleCount"""
-        return self._get('get_sample_count')
+        return self._get_cached('get_sample_count')
 
     @property
     def dimension(self) -> enums.TextureDimensionEnum:
         """GPUTexture.dimension"""
-        return self._get('get_dimension')
+        return self._get_cached('get_dimension')
 
     @property
     def format(self) -> enums.TextureFormatEnum:
         """GPUTexture.format"""
-        return self._get('get_format')
+        return self._get_cached('get_format')
 
     @property
     def usage(self) -> int:
         """GPUTexture.usage"""
-        return self._get('get_usage')
+        return self._get_cached('get_usage')
 
     texture_binding_view_dimension = _ov.texture_texture_binding_view_dimension
 

@@ -30,7 +30,7 @@ from wgpu._generated.apiclasses import (
     GPUTextureView,
 )
 from wgpu._generated.apiclasses import __all__ as _generated_all
-from wgpu._runtime.awaitable import WgpuFuture as GPUPromise
+from wgpu._api.promise import GPUPromise
 from wgpu._runtime.errors import (
     DrawCancelled,
     GPUError,

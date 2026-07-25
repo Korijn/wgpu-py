@@ -49,6 +49,7 @@ class GPUObjectBase(Mixin):
         "_lost_promise",
         "_uncaptured_error_handler",
         "_binding_view_dimension",
+        "_cache",
     )
 
     _spec_name = ""
@@ -63,6 +64,7 @@ class GPUObjectBase(Mixin):
         self._lost_promise = None
         self._uncaptured_error_handler = None
         self._binding_view_dimension = None
+        self._cache = {}
 
     # -- identity ----------------------------------------------------------
 
@@ -100,15 +102,29 @@ class GPUObjectBase(Mixin):
     def _get(self, spec_method: str):
         return get_api().invoke(self, spec_method, ())
 
+    def _get_cached(self, spec_method: str):
+        """Like :meth:`_get`, for values that cannot change after creation.
+
+        A buffer's size, a texture's format and so on are fixed by the
+        descriptor they were made from, so reading them need not cross the FFI
+        boundary more than once -- and they are read constantly in render loops.
+        """
+        cache = self._cache
+        try:
+            return cache[spec_method]
+        except KeyError:
+            value = cache[spec_method] = get_api().invoke(self, spec_method, ())
+            return value
+
     @staticmethod
     def _promise(future):
         """The ``*_async`` form: hand back the awaitable as-is."""
         return future
 
     @staticmethod
-    def _await(future):
-        """The ``*_sync`` form: pump the event loop until the result lands."""
-        return future.wait()
+    def _await(promise):
+        """The ``*_sync`` form: pump the event queue until the result lands."""
+        return promise.sync_wait()
 
     # -- lifetime ----------------------------------------------------------
 

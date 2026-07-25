@@ -11,11 +11,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from .awaitable import WgpuFuture
+from .awaitable import WgpuPromise
 
 
 class UnsupportedError(NotImplementedError):
     """Raised for method shapes the invoker does not marshal yet."""
+
+
+#: Distinguishes "not compiled yet" from "compiled to None" (no fast path).
+_UNCOMPILED = object()
 
 
 class Invoker:
@@ -26,6 +30,8 @@ class Invoker:
         self.registry = registry  # spec object-name -> Python class
         self.enums = enums
         self.flags = flags
+        # c_func -> compiled fast caller, or None where none applies.
+        self._fast: dict[str, object] = {}
 
     # -- argument marshalling (unit-testable, no C call) -------------------
 
@@ -179,6 +185,70 @@ class Invoker:
     # -- the call ----------------------------------------------------------
 
     def call(self, method, caller, py_args):
+        """Dispatch a method, via its compiled fast path where one applies."""
+        fast = self._fast.get(method.c_func, _UNCOMPILED)
+        if fast is _UNCOMPILED:
+            fast = self._fast[method.c_func] = self._compile(method)
+        if fast is not None:
+            return fast(caller._handle, py_args)
+        return self._call_general(method, caller, py_args)
+
+    def _compile(self, method):
+        """Build a specialised caller for ``method``, or None if not eligible.
+
+        Command recording runs thousands of times per frame, and profiling put
+        almost all of that time in re-deriving the same facts on every call --
+        looking up the C function, asking cffi for its signature, re-testing
+        each argument's kind. None of that changes after generation, so it is
+        resolved once here and the per-call work becomes a tight loop over
+        prebound converters.
+
+        Only the simple shapes qualify: scalars, strings and object handles,
+        with a void or scalar return. Anything needing allocation (structs,
+        arrays, raw buffers) or a callback falls back to the general path.
+        """
+        if method.is_async or any(
+            a.array or a.kind in ("struct", "c_void") for a in method.args
+        ):
+            return None
+        if method.ret_kind in ("struct", "c_void"):
+            return None
+
+        cfunc = getattr(self.lib, method.c_func)
+        converters = []
+        for arg in method.args:
+            if arg.kind == "prim":
+                converters.append(float if _is_float(arg.ref) else int)
+            elif arg.kind == "enum":
+                converters.append(self.enums.TO_INT[arg.ref].__getitem__)
+            elif arg.kind == "bitflag":
+                converters.append(self.flags.TO_INT[arg.ref].__getitem__)
+            elif arg.kind == "object":
+                converters.append(self._unwrap)
+            else:  # strings need a keepalive, so they use the general path
+                return None
+        n_args = len(converters)
+
+        # Returns are resolved to a single wrapper, chosen once.
+        ret_kind, ret_ref = method.ret_kind, method.ret_ref
+        if ret_kind is None:
+            wrap = None
+        elif ret_kind == "prim" and ret_ref != "bool":
+            wrap = None  # the C value is already what we want
+        else:
+            wrap = lambda value: self.wrap_return(method, value)  # noqa: E731
+
+        def fast_call(handle, py_args, _c=cfunc, _conv=converters, _n=n_args):
+            if len(py_args) != _n:
+                raise TypeError(
+                    f"{method.py}() takes {_n} args, got {len(py_args)}"
+                )
+            result = _c(handle, *[f(v) for f, v in zip(_conv, py_args)])
+            return wrap(result) if wrap is not None else result
+
+        return fast_call
+
+    def _call_general(self, method, caller, py_args):
         self_handle = caller._handle
         pump = caller._pump
         c_args, keep = self.marshal_args(method, py_args)
@@ -199,7 +269,7 @@ class Invoker:
     def _call_async(self, method, cfunc, self_handle, c_args, keep, pump, caller=None):
         if pump is None:
             raise RuntimeError(f"{method.py}() is async but no event pump is available")
-        future = WgpuFuture(pump)
+        future = WgpuPromise(method.py, pump)
         info = self.ffi.new(method.callback_info_c + " *")
         info.mode = self.lib.WGPUCallbackMode_AllowProcessEvents
 
@@ -216,15 +286,15 @@ class Invoker:
             try:
                 if int(status) != success_status:
                     msg = _message(self.ffi, rest)
-                    future.set_error(RuntimeError(f"{method.py} failed: {msg}"))
+                    future._wgpu_set_error(RuntimeError(f"{method.py} failed: {msg}"))
                 elif result_ref is not None:
-                    future.set_result(
+                    future._wgpu_set_input(
                         self._wrap_object(result_ref, rest[0], pump, caller)
                     )
                 else:
-                    future.set_result(int(status))
+                    future._wgpu_set_input(int(status))
             except BaseException as exc:
-                future.set_error(exc)
+                future._wgpu_set_error(exc)
 
         info.callback = _cb
         # Keep everything the pending callback depends on alive until it fires

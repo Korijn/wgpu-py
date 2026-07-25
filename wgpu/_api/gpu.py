@@ -68,7 +68,7 @@ class GPU:
             power_preference=power_preference,
             force_fallback_adapter=force_fallback_adapter,
             canvas=canvas,
-        ).wait()
+        ).sync_wait()
 
     def enumerate_adapters_async(self):
         """List every adapter wgpu-native can see."""

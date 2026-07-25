@@ -43,11 +43,13 @@ def device_create_buffer_with_data(self, *, label="", data, usage):
     size rounded up to a multiple of 4, as wgpu-native requires.
     """
     src = memoryview(data).cast("B")
+    # wgpu-native requires both buffer sizes and mapped ranges to be a multiple
+    # of 4, so round up and leave the padding bytes zeroed.
     size = (src.nbytes + 3) & ~3
     buffer = self.create_buffer(
         label=label, size=size, usage=usage, mapped_at_creation=True
     )
-    buffer.write_mapped(src)
+    buffer.get_mapped_range(0, size)[: src.nbytes] = src
     buffer.unmap()
     return buffer
 

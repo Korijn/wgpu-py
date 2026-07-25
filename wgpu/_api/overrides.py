@@ -200,7 +200,7 @@ def buffer_map_async(self, mode, offset=0, size=None):
 
 def buffer_map_sync(self, mode, offset=0, size=None):
     """Blocking version of `map_async()`."""
-    return buffer_map_async(self, mode, offset, size).wait()
+    return buffer_map_async(self, mode, offset, size).sync_wait()
 
 
 buffer_map = deprecated_sync_or_async("map")

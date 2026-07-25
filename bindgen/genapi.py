@@ -370,6 +370,26 @@ MIXIN_REPRESENTATIVE = {
     "GPUPipelineBase": "GPUComputePipeline",
 }
 
+#: Attributes fixed for an object's lifetime, because they come from the
+#: descriptor it was created with. These are read constantly in render loops, so
+#: they are fetched once and cached rather than crossing the FFI boundary each
+#: time. Everything not listed here is read live -- notably a buffer's map
+#: state, which changes.
+IMMUTABLE_ATTRS = {
+    ("GPUBuffer", "size"),
+    ("GPUBuffer", "usage"),
+    ("GPUTexture", "width"),
+    ("GPUTexture", "height"),
+    ("GPUTexture", "depthOrArrayLayers"),
+    ("GPUTexture", "mipLevelCount"),
+    ("GPUTexture", "sampleCount"),
+    ("GPUTexture", "dimension"),
+    ("GPUTexture", "format"),
+    ("GPUTexture", "usage"),
+    ("GPUQuerySet", "type"),
+    ("GPUQuerySet", "count"),
+}
+
 #: The extra ``label`` keyword that wgpu-py has always accepted on every
 #: descriptor-taking method, matching ``GPUObjectDescriptorBase``.
 _LABEL_PARAM = 'label: str = ""'
@@ -529,11 +549,12 @@ def _emit_attr(b, cls_name, attr_name, spec_methods) -> list[str]:
     line = b.idl.classes[cls_name].attributes[attr_name]
     typename = line.partition("attribute")[2].strip().rsplit(" ", 1)[0]
     ann = _annotate(b.idl, typename)
+    fetch = "_get_cached" if (cls_name, attr_name) in IMMUTABLE_ATTRS else "_get"
     return [
         "    @property",
         f"    def {_ident(py)}(self) -> {ann}:",
         f'        """{cls_name}.{attr_name}"""',
-        f"        return self._get({getter!r})",
+        f"        return self.{fetch}({getter!r})",
         "",
     ]
 

@@ -1,4 +1,10 @@
-"""This module implements the core for the async support in wgpu."""
+"""Loop-agnostic promises for wgpu's asynchronous methods.
+
+A ``GPUPromise`` can be awaited from asyncio or trio, resolved with a callback
+via ``then()``, or blocked on with ``sync_wait()``. Which async library is in
+use is detected only when a promise is actually awaited, so nothing here ties
+wgpu to a particular framework, and nothing costs anything on the hot path.
+"""
 
 from __future__ import annotations
 
