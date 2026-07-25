@@ -35,7 +35,21 @@ class GPUObjectBase(Mixin):
     drives async work) alive for as long as this object needs it.
     """
 
-    __slots__ = ("__weakref__", "_handle", "_parent", "_pump", "_label", "_uid")
+    __slots__ = (
+        "__weakref__",
+        "_handle",
+        "_parent",
+        "_pump",
+        "_label",
+        "_uid",
+        # Cached/attached state for the few properties that are not plain
+        # getters: the device's queue, its loss promise and error handler, and
+        # a texture's pinned binding-view dimension.
+        "_queue",
+        "_lost_promise",
+        "_uncaptured_error_handler",
+        "_binding_view_dimension",
+    )
 
     _spec_name = ""
 
@@ -45,6 +59,10 @@ class GPUObjectBase(Mixin):
         self._parent = parent
         self._label = label
         self._uid = next(_uid_counter)
+        self._queue = None
+        self._lost_promise = None
+        self._uncaptured_error_handler = None
+        self._binding_view_dimension = None
 
     # -- identity ----------------------------------------------------------
 

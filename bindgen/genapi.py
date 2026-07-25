@@ -68,6 +68,8 @@ def generate_api_enums(b: bridge.Bridge, lib) -> str:
         '"""WebGPU enums. Values are strings, so ``wgpu.TextureFormat.rgba8unorm``',
         'and ``"rgba8unorm"`` are interchangeable."""',
         "",
+        "from typing import Literal",
+        "",
         "from wgpu._api.maps import EnumMap as _EnumMap",
         "",
         "",
@@ -82,6 +84,7 @@ def generate_api_enums(b: bridge.Bridge, lib) -> str:
     lines.append("")
     lines.append("__all__ = [")
     lines += [f"    {n!r}," for n in names]
+    lines += [f"    '{n}Enum'," for n in names]
     lines.append("]")
     lines.append("")
 
@@ -92,6 +95,16 @@ def generate_api_enums(b: bridge.Bridge, lib) -> str:
         for key, value in members.items():
             lines.append(f"    {_ident(key)} = {value!r}")
         lines.append("")
+
+    # Type aliases used in annotations: a Literal of the valid strings, widened
+    # with ``str`` so passing an unlisted value is a runtime error, not a type
+    # error (new spec values appear before the vendored IDL catches up).
+    lines.append("")
+    for idl_name in names:
+        values = list(b.idl.enums[idl_name].values())
+        literal = ", ".join(repr(v) for v in values)
+        lines.append(f"{idl_name}Enum = Literal[{literal}] | str")
+    lines.append("")
 
     # spec-enum-name -> {public string | int -> C int}
     lines.append("")
@@ -152,6 +165,7 @@ def generate_api_flags(b: bridge.Bridge) -> str:
     lines.append("")
     lines.append("__all__ = [")
     lines += [f"    {n!r}," for n in names]
+    lines += [f"    '{n}Flags'," for n in names]
     lines.append("]")
     lines.append("")
 
@@ -162,6 +176,10 @@ def generate_api_flags(b: bridge.Bridge) -> str:
             lines.append(f"    {_ident(key)} = {value}")
         lines.append("")
 
+    # Flags accept an int or an ``"A|B"`` string, in annotations as at runtime.
+    lines.append("")
+    for idl_name in names:
+        lines.append(f"{idl_name}Flags = int | str")
     lines.append("")
     lines.append("#: C-spec bitflag name -> mapping that accepts ints and 'A|B' strings.")
     lines.append("TO_INT: dict[str, _FlagMap] = {}")
@@ -385,7 +403,7 @@ def generate_api_classes(b: bridge.Bridge, spec: dict) -> str:
         "from wgpu._generated import apistructs as structs",
         "",
     ]
-    names = sorted(b.idl.classes)
+    names = [n for n in sorted(b.idl.classes) if n not in PYTHON_SIDE_CLASSES]
     lines.append("__all__ = [")
     lines += [f"    {n!r}," for n in names]
     lines.append("]")

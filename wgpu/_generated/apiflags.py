@@ -23,6 +23,11 @@ __all__ = [
     'MapMode',
     'ShaderStage',
     'TextureUsage',
+    'BufferUsageFlags',
+    'ColorWriteFlags',
+    'MapModeFlags',
+    'ShaderStageFlags',
+    'TextureUsageFlags',
 ]
 
 
@@ -66,6 +71,12 @@ class TextureUsage(Flags):
     RENDER_ATTACHMENT = 16
     TRANSIENT_ATTACHMENT = 32
 
+
+BufferUsageFlags = int | str
+ColorWriteFlags = int | str
+MapModeFlags = int | str
+ShaderStageFlags = int | str
+TextureUsageFlags = int | str
 
 #: C-spec bitflag name -> mapping that accepts ints and 'A|B' strings.
 TO_INT: dict[str, _FlagMap] = {}

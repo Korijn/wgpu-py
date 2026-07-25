@@ -20,17 +20,34 @@ logger = logging.getLogger("wgpu")
 class GPUError(Exception):
     """Base class for errors reported by wgpu-native."""
 
+    def __init__(self, message: str = ""):
+        super().__init__(message)
+        self.message = message
+
 
 class GPUValidationError(GPUError):
     """The API was used incorrectly (bad usage flags, wrong sizes, ...)."""
 
 
-class GPUOutOfMemoryError(GPUError):
+class GPUOutOfMemoryError(GPUError, MemoryError):
     """The device ran out of memory."""
 
 
 class GPUInternalError(GPUError):
     """An internal error inside wgpu-native."""
+
+
+class GPUPipelineError(Exception):
+    """A pipeline could not be created."""
+
+    def __init__(self, message: str = "", reason: str = ""):
+        super().__init__(message)
+        self.message = message
+        self.reason = reason
+
+
+class DrawCancelled(Exception):
+    """Raised to abandon a draw without it counting as a failure."""
 
 
 #: ``WGPUErrorType`` value -> exception class.

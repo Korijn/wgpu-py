@@ -18,30 +18,19 @@ from wgpu._generated import apiflags as flags
 from wgpu._generated import apistructs as structs
 
 __all__ = [
-    'GPU',
     'GPUAdapter',
-    'GPUAdapterInfo',
     'GPUBindGroup',
     'GPUBindGroupLayout',
     'GPUBindingCommandsMixin',
     'GPUBuffer',
-    'GPUCanvasContext',
     'GPUCommandBuffer',
     'GPUCommandEncoder',
     'GPUCommandsMixin',
-    'GPUCompilationInfo',
-    'GPUCompilationMessage',
     'GPUComputePassEncoder',
     'GPUComputePipeline',
     'GPUDebugCommandsMixin',
     'GPUDevice',
-    'GPUDeviceLostInfo',
-    'GPUError',
-    'GPUInternalError',
-    'GPUObjectBase',
-    'GPUOutOfMemoryError',
     'GPUPipelineBase',
-    'GPUPipelineError',
     'GPUPipelineLayout',
     'GPUQuerySet',
     'GPUQueue',
@@ -54,7 +43,6 @@ __all__ = [
     'GPUShaderModule',
     'GPUTexture',
     'GPUTextureView',
-    'GPUValidationError',
 ]
 
 
