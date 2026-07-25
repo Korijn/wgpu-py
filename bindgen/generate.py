@@ -450,23 +450,27 @@ def _clean_doc(text: str | None) -> str:
 # ---- classes ---------------------------------------------------------------
 
 
-def generate_classes(spec) -> str:
-    """Emit one ``GPU<Object>`` class per object with real method signatures.
+def generate_classes(spec, bridge=None) -> str:
+    """Emit ``GPU*`` classes for wgpu-native objects the Web IDL does not model.
 
-    Every method body funnels through ``GPUObjectBase._invoke``, so the classes
-    are ergonomic (introspectable signatures + docstrings) with zero per-method
-    hand code.
+    Most objects get their public class from ``apiclasses.py``, generated from
+    the IDL. A few exist only in the C API -- the instance, and the surface that
+    backs presentation -- so their classes are derived from the C spec instead.
+    Signatures come straight from webgpu.json; bodies dispatch like any other.
     """
     import keyword as _kw
 
+    covered = set(bridge.classes.values()) if bridge else set()
     lines = [
         _BANNER,
-        '"""Generated ``GPU*`` wrapper classes for wgpu-native objects."""',
+        '"""``GPU*`` classes for wgpu-native objects with no Web IDL counterpart."""',
         "",
-        "from wgpu._runtime.base import GPUObjectBase",
+        "from wgpu._api.base import GPUObjectBase",
         "",
     ]
     for obj in spec["objects"]:
+        if obj["name"] in covered:
+            continue
         cls = "GPU" + naming.py_class_name(obj["name"])
         lines.append(f"class {cls}(GPUObjectBase):")
         lines.append(f"    _spec_name = {obj['name']!r}")
@@ -503,7 +507,7 @@ def generate_classes(spec) -> str:
             if doc:
                 lines.append(doc.rstrip("\n"))
             passthrough = f", {call_args}" if call_args else ""
-            lines.append(f"        return self._invoke({meth['name']!r}{passthrough})")
+            lines.append(f"        return self._call({meth['name']!r}{passthrough})")
             lines.append("")
         lines.append("")
     return "\n".join(lines)
@@ -533,7 +537,7 @@ def write_all(out_dir: Path = GENERATED_DIR) -> list[Path]:
         ("structs.py", generate_structs(spec, ffi, lib, bridge)),
         ("constants.py", generate_constants(spec)),
         ("objects.py", generate_objects(spec, lib, ffi)),
-        ("classes.py", generate_classes(spec)),
+        ("classes.py", generate_classes(spec, bridge)),
         ("apienums.py", genapi.generate_api_enums(bridge, lib)),
         ("apiflags.py", genapi.generate_api_flags(bridge)),
         ("apistructs.py", genapi.generate_api_structs(bridge)),

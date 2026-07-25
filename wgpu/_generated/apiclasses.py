@@ -100,7 +100,9 @@ class GPUBindGroupLayout(GPUObjectBase):
 class GPUBindingCommandsMixin(Mixin):
     """GPUBindingCommandsMixin -- see the WebGPU specification."""
 
-    pass
+    set_bind_group = _ov.binding_commands_set_bind_group
+
+    set_immediates = _ov.binding_commands_set_immediates
 
 
 
@@ -162,7 +164,17 @@ class GPUCommandsMixin(Mixin):
 class GPUDebugCommandsMixin(Mixin):
     """GPUDebugCommandsMixin -- see the WebGPU specification."""
 
-    pass
+    def push_debug_group(self, group_label: str) -> None:
+        """GPUDebugCommandsMixin.pushDebugGroup -- see the WebGPU specification."""
+        return self._call('push_debug_group', group_label)
+
+    def pop_debug_group(self) -> None:
+        """GPUDebugCommandsMixin.popDebugGroup -- see the WebGPU specification."""
+        return self._call('pop_debug_group')
+
+    def insert_debug_marker(self, marker_label: str) -> None:
+        """GPUDebugCommandsMixin.insertDebugMarker -- see the WebGPU specification."""
+        return self._call('insert_debug_marker', marker_label)
 
 
 
@@ -233,7 +245,9 @@ class GPUComputePassEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingC
 class GPUPipelineBase(Mixin):
     """GPUPipelineBase -- see the WebGPU specification."""
 
-    pass
+    def get_bind_group_layout(self, index: int) -> GPUBindGroupLayout:
+        """GPUPipelineBase.getBindGroupLayout -- see the WebGPU specification."""
+        return self._call('get_bind_group_layout', index)
 
 
 
@@ -293,21 +307,9 @@ class GPUDevice(GPUObjectBase):
         """GPUDevice.createComputePipelineAsync -- see the WebGPU specification."""
         return self._promise(self._call_desc('create_compute_pipeline_async', {'label': label, 'layout': layout, 'compute': compute}))
 
-    def create_compute_pipeline_sync(self, *, label: str = "", layout: GPUPipelineLayout | enums.AutoLayoutModeEnum, compute: structs.ProgrammableStageStruct) -> GPUComputePipeline:
-        """GPUDevice.createComputePipelineAsync -- see the WebGPU specification."""
-        return self._await(self._call_desc('create_compute_pipeline_async', {'label': label, 'layout': layout, 'compute': compute}))
-
-    create_compute_pipeline = _ov.deprecated_sync_or_async('create_compute_pipeline')
-
     def create_render_pipeline_async(self, *, label: str = "", layout: GPUPipelineLayout | enums.AutoLayoutModeEnum, vertex: structs.VertexStateStruct, primitive: structs.PrimitiveStateStruct | None = None, depth_stencil: structs.DepthStencilStateStruct | None = None, multisample: structs.MultisampleStateStruct | None = None, fragment: structs.FragmentStateStruct | None = None) -> GPURenderPipeline:
         """GPUDevice.createRenderPipelineAsync -- see the WebGPU specification."""
         return self._promise(self._call_desc('create_render_pipeline_async', {'label': label, 'layout': layout, 'vertex': vertex, 'primitive': primitive, 'depth_stencil': depth_stencil, 'multisample': multisample, 'fragment': fragment}))
-
-    def create_render_pipeline_sync(self, *, label: str = "", layout: GPUPipelineLayout | enums.AutoLayoutModeEnum, vertex: structs.VertexStateStruct, primitive: structs.PrimitiveStateStruct | None = None, depth_stencil: structs.DepthStencilStateStruct | None = None, multisample: structs.MultisampleStateStruct | None = None, fragment: structs.FragmentStateStruct | None = None) -> GPURenderPipeline:
-        """GPUDevice.createRenderPipelineAsync -- see the WebGPU specification."""
-        return self._await(self._call_desc('create_render_pipeline_async', {'label': label, 'layout': layout, 'vertex': vertex, 'primitive': primitive, 'depth_stencil': depth_stencil, 'multisample': multisample, 'fragment': fragment}))
-
-    create_render_pipeline = _ov.deprecated_sync_or_async('create_render_pipeline')
 
     def create_command_encoder(self, *, label: str = "") -> GPUCommandEncoder:
         """GPUDevice.createCommandEncoder -- see the WebGPU specification."""
@@ -412,7 +414,33 @@ class GPURenderBundle(GPUObjectBase):
 class GPURenderCommandsMixin(Mixin):
     """GPURenderCommandsMixin -- see the WebGPU specification."""
 
-    pass
+    def set_pipeline(self, pipeline: GPURenderPipeline) -> None:
+        """GPURenderCommandsMixin.setPipeline -- see the WebGPU specification."""
+        return self._call('set_pipeline', pipeline)
+
+    def set_index_buffer(self, buffer: GPUBuffer, index_format: enums.IndexFormatEnum, offset: int = 0, size: int | None = None) -> None:
+        """GPURenderCommandsMixin.setIndexBuffer -- see the WebGPU specification."""
+        return self._call('set_index_buffer', buffer, index_format, offset, size)
+
+    def set_vertex_buffer(self, slot: int, buffer: GPUBuffer, offset: int = 0, size: int | None = None) -> None:
+        """GPURenderCommandsMixin.setVertexBuffer -- see the WebGPU specification."""
+        return self._call('set_vertex_buffer', slot, buffer, offset, size)
+
+    def draw(self, vertex_count: int, instance_count: int = 1, first_vertex: int = 0, first_instance: int = 0) -> None:
+        """GPURenderCommandsMixin.draw -- see the WebGPU specification."""
+        return self._call('draw', vertex_count, instance_count, first_vertex, first_instance)
+
+    def draw_indexed(self, index_count: int, instance_count: int = 1, first_index: int = 0, base_vertex: int = 0, first_instance: int = 0) -> None:
+        """GPURenderCommandsMixin.drawIndexed -- see the WebGPU specification."""
+        return self._call('draw_indexed', index_count, instance_count, first_index, base_vertex, first_instance)
+
+    def draw_indirect(self, indirect_buffer: GPUBuffer, indirect_offset: int) -> None:
+        """GPURenderCommandsMixin.drawIndirect -- see the WebGPU specification."""
+        return self._call('draw_indirect', indirect_buffer, indirect_offset)
+
+    def draw_indexed_indirect(self, indirect_buffer: GPUBuffer, indirect_offset: int) -> None:
+        """GPURenderCommandsMixin.drawIndexedIndirect -- see the WebGPU specification."""
+        return self._call('draw_indexed_indirect', indirect_buffer, indirect_offset)
 
 
 

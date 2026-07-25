@@ -293,6 +293,10 @@ HAND_WRITTEN = {
     ("GPUQueue", "writeBuffer"),
     # C needs an explicit byte count that the IDL derives from the data.
     ("GPUQueue", "writeTexture"),
+    # The IDL overloads this with a dynamic-offsets slice; C takes the array.
+    ("GPUBindingCommandsMixin", "setBindGroup"),
+    # The IDL slices the source data; C takes a pointer plus a byte count.
+    ("GPUBindingCommandsMixin", "setImmediates"),
 }
 
 #: Attributes with no plain C getter behind them: they either aggregate several
@@ -445,10 +449,14 @@ def _emit_class(b, cls_name, interface, spec_object, objects, proxy) -> list[str
         if (cls_name, fn_name) in HAND_WRITTEN:
             body += _emit_override_hook(cls_name, fn_name)
             continue
-        spec_method = b.methods.get((proxy, fn_name))
-        if spec_method is None:
+        spec_method = b.methods.get((proxy, fn_name)) or bridge.camel_to_snake(
+            fn_name
+        )
+        if spec_method not in spec_methods:
             continue  # web-only, or lives on a hand-written class
-        body += _emit_method(b, cls_name, fn_name, line, spec_methods[spec_method])
+        body += _emit_method(
+            b, cls_name, fn_name, line, spec_methods[spec_method], interface
+        )
     for attr_name in interface.attributes:
         if (cls_name, attr_name) in HAND_WRITTEN_ATTRS:
             body += _emit_attr_hook(cls_name, attr_name)
@@ -459,15 +467,23 @@ def _emit_class(b, cls_name, interface, spec_object, objects, proxy) -> list[str
     return lines + body
 
 
+def _override_prefix(cls_name: str) -> str:
+    """``GPUBindingCommandsMixin`` -> ``binding_commands``, ``GPUQueue`` -> ``queue``."""
+    name = cls_name[3:]
+    if name.endswith("Mixin"):
+        name = name[: -len("Mixin")]
+    return bridge.camel_to_snake(name)
+
+
 def _emit_override_hook(cls_name, fn_name) -> list[str]:
     """Bind a hand-written implementation into the generated class."""
     py = bridge.camel_to_snake(fn_name)
-    return [f"    {py} = _ov.{bridge.camel_to_snake(cls_name[3:])}_{py}", ""]
+    return [f"    {py} = _ov.{_override_prefix(cls_name)}_{py}", ""]
 
 
 def _emit_attr_hook(cls_name, attr_name) -> list[str]:
     py = bridge.camel_to_snake(attr_name)
-    return [f"    {py} = _ov.{bridge.camel_to_snake(cls_name[3:])}_{py}", ""]
+    return [f"    {py} = _ov.{_override_prefix(cls_name)}_{py}", ""]
 
 
 def _emit_attr(b, cls_name, attr_name, spec_methods) -> list[str]:
@@ -488,7 +504,7 @@ def _emit_attr(b, cls_name, attr_name, spec_methods) -> list[str]:
     ]
 
 
-def _emit_method(b, cls_name, fn_name, line, spec_method) -> list[str]:
+def _emit_method(b, cls_name, fn_name, line, spec_method, interface) -> list[str]:
     py = bridge.camel_to_snake(fn_name)
     params = _params(line)
     is_async = line.strip().startswith("Promise<")
@@ -496,7 +512,10 @@ def _emit_method(b, cls_name, fn_name, line, spec_method) -> list[str]:
         # ``mapAsync`` is the promise form of ``map``; we re-add the suffix
         # below so it does not become ``map_async_async``.
         py = py[: -len("_async")]
-    ret = line.strip().split(" ", 1)[0]
+    # Strip any IDL extended attribute (``[NewObject] GPURenderBundle finish()``)
+    # before reading the return type.
+    decl = re.sub(r"^\s*\[[^\]]*\]\s*", "", line.strip())
+    ret = decl.split(" ", 1)[0]
     ann = _annotate(b.idl, ret)
 
     args = spec_method.get("args", [])
@@ -539,14 +558,21 @@ def _emit_method(b, cls_name, fn_name, line, spec_method) -> list[str]:
         return [f"    {decl}", doc, f"        return {call}", ""]
 
     # Promise-returning: wgpu-py exposes both a blocking and an awaitable form.
+    # Unless the IDL already has a separate synchronous sibling, in which case
+    # only the awaitable form is ours to add.
+    has_sync_sibling = any(
+        bridge.camel_to_snake(other) == py for other in interface.functions
+        if other != fn_name
+    )
     out = []
-    for suffix, wrap in (("_async", "self._promise"), ("_sync", "self._await")):
+    variants = (("_async", "self._promise"),)
+    if not has_sync_sibling:
+        variants += (("_sync", "self._await"),)
+    for suffix, wrap in variants:
         adecl = decl.replace(f"def {_ident(py)}(", f"def {_ident(py)}{suffix}(", 1)
         out += [f"    {adecl}", doc, f"        return {wrap}({call})", ""]
-    out += [
-        f"    {_ident(py)} = _ov.deprecated_sync_or_async({py!r})",
-        "",
-    ]
+    if not has_sync_sibling:
+        out += [f"    {_ident(py)} = _ov.deprecated_sync_or_async({py!r})", ""]
     return out
 
 

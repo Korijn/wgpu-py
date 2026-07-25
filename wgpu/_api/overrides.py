@@ -140,3 +140,41 @@ def queue_write_texture(self, destination, data, data_layout, size):
     """
     view = memoryview(data).cast("B")
     return self._call("write_texture", destination, view, view.nbytes, data_layout, size)
+
+
+def binding_commands_set_bind_group(
+    self,
+    index,
+    bind_group,
+    dynamic_offsets_data=(),
+    dynamic_offsets_data_start=None,
+    dynamic_offsets_data_length=None,
+):
+    """Bind a bind group, optionally with a slice of dynamic offsets.
+
+    The web API lets the caller pass a large offsets buffer plus a
+    start/length window into it; C takes just the resulting array.
+    """
+    if dynamic_offsets_data_start is not None or dynamic_offsets_data_length is not None:
+        if dynamic_offsets_data_start is None or dynamic_offsets_data_length is None:
+            raise ValueError(
+                "set_bind_group: pass both dynamic_offsets_data_start and "
+                "dynamic_offsets_data_length, or neither"
+            )
+        if dynamic_offsets_data_start < 0 or dynamic_offsets_data_length < 0:
+            raise ValueError("set_bind_group: dynamic offsets slice must be positive")
+        start = dynamic_offsets_data_start
+        dynamic_offsets_data = memoryview(dynamic_offsets_data).cast("I")[
+            start : start + dynamic_offsets_data_length
+        ]
+    offsets = [int(i) for i in dynamic_offsets_data]
+    return self._call("set_bind_group", index, bind_group, offsets)
+
+
+def binding_commands_set_immediates(self, range_offset, data, data_offset=0, data_size=None):
+    """Set immediate data, slicing the source the way the web API does."""
+    view = memoryview(data).cast("B")
+    if data_size is None:
+        data_size = view.nbytes - data_offset
+    chunk = view[data_offset : data_offset + data_size]
+    return self._call("set_immediate_data", range_offset, chunk, chunk.nbytes)
