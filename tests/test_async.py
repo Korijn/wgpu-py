@@ -12,7 +12,7 @@ from rendercanvas.raw import RawLoop
 import wgpu.utils
 from testutils import can_use_wgpu_lib, run_tests
 from wgpu import GPUDevice, MapMode, TextureFormat
-from wgpu._async import (
+from wgpu._api.promise import (
     GPUPromise as BaseGPUPromise,
     detect_current_call_soon_threadsafe,
     detect_current_async_lib,

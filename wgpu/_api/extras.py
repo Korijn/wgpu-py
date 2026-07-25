@@ -138,6 +138,6 @@ def texture_view_size(self):
 
 def enumerate_adapters(instance):
     """Every adapter wgpu-native can see, as `GPUAdapter` objects."""
-    from wgpu._runtime.api import get_api
+    from wgpu.backends.wgpu_native.extras import enumerate_adapters as _enumerate
 
-    return get_api().enumerate_adapters(instance)
+    return _enumerate(instance)

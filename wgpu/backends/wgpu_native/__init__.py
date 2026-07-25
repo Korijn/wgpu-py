@@ -1,23 +1,11 @@
+"""The wgpu-native backend.
+
+There is no backend selection any more: wgpu-native *is* the implementation,
+compiled into this package. This module exists so the historical import path
+keeps working, and so wgpu-native's non-standard extras have a home that says
+plainly they are not part of WebGPU.
 """
-The wgpu-native backend.
-"""
 
-# ruff: noqa: F401, E402, F403
-
-from ._api import *
-from ._ffi import ffi, lib, lib_path, lib_version_info
-from ._ffi import _check_expected_version
-from .. import _register_backend
-
-
-# The wgpu-native version that we target/expect
-__version__ = "29.0.1.1"
-__commit_sha__ = "6aed50955d934ac36049ba8d002034841633ae02"
-version_info = tuple(map(int, __version__.split(".")))  # noqa: RUF048
-_check_expected_version(version_info)  # produces a warning on mismatch
-
-# Instantiate and register this backend
-gpu = GPU()  # noqa: F405
-_register_backend(gpu)
-
-from .extras import request_device_sync, request_device
+from wgpu._api import *  # noqa: F401,F403
+from wgpu._api import __all__  # noqa: F401
+from . import extras  # noqa: F401
