@@ -56,6 +56,33 @@ def test_create_buffer_struct_arg(device):
     assert buf.get_size() == 256  # scalar return
 
 
+def test_gpu_data_roundtrip(device):
+    """write -> copy -> submit -> map -> read, all through the generated API.
+
+    Exercises struct args, raw-data (c_void) args, array args (submit), the
+    async future, buffer mapping as a memoryview, and object lifetimes.
+    """
+    from wgpu._generated import flags
+
+    BU = flags.BufferUsage
+    data = bytes(range(16))
+
+    queue = device.get_queue()
+    src = device.create_buffer({"label": "src", "usage": BU.copy_src | BU.copy_dst, "size": 16})
+    dst = device.create_buffer({"label": "dst", "usage": BU.copy_dst | BU.map_read, "size": 16})
+
+    queue.write_buffer(src, 0, data, len(data))  # c_void data arg
+    encoder = device.create_command_encoder()
+    encoder.copy_buffer_to_buffer(src, 0, dst, 0, 16)
+    queue.submit([encoder.finish()])  # array arg -> (count, ptr)
+
+    assert dst.map_async(int(flags.MapMode.read), 0, 16).wait() == 1
+    view = dst.get_mapped_range(0, 16)  # c_void return -> memoryview
+    assert isinstance(view, memoryview)
+    assert bytes(view) == data
+    dst.unmap()
+
+
 def test_await_path_matches_sync(device):
     import asyncio
 

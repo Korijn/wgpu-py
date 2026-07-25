@@ -35,15 +35,34 @@ class Invoker:
             raise TypeError(
                 f"{method.py}() takes {len(method.args)} args, got {len(py_args)}"
             )
+        # The real C signature drives element types for array args, so the
+        # marshaller never has to guess a ctype.
+        c_sig = self.ffi.typeof(getattr(self.lib, method.c_func)).args
         c_args: list[Any] = []
         keep: list[Any] = []
+        pos = 1  # index into c_sig; 0 is the object handle itself
         for arg, value in zip(method.args, py_args):
-            c_args.extend(self._marshal_one(arg, value, keep))
+            vals = self._marshal_one(arg, value, keep, c_sig, pos)
+            c_args.extend(vals)
+            pos += len(vals)
         return c_args, keep
 
-    def _marshal_one(self, arg, value, keep: list) -> list:
+    def _marshal_one(self, arg, value, keep: list, c_sig=None, pos=0) -> list:
         if arg.array:
-            raise Unsupported(f"array argument {arg.py!r} not yet supported")
+            # C expands an array argument to (count, pointer), in that order.
+            items = list(value or ())
+            if not items:
+                return [0, self.ffi.NULL]
+            elem_ctype = self.ffi.getctype(c_sig[pos + 1].item)
+            if arg.kind == "object":
+                data = [self._unwrap(it) for it in items]
+            elif arg.kind in ("enum", "bitflag", "prim"):
+                data = [int(it) for it in items]
+            else:
+                raise Unsupported(f"array of {arg.kind!r} not supported ({arg.py})")
+            cdata = self.ffi.new(f"{elem_ctype}[{len(items)}]", data)
+            keep.append(cdata)
+            return [len(items), cdata]
         if arg.kind == "struct":
             if value is None and arg.optional:
                 return [self.ffi.NULL]
@@ -54,10 +73,18 @@ class Invoker:
             return [self._unwrap(value)]
         if arg.kind == "string":
             return [self._string_value(value, keep)]
-        if arg.kind in ("enum", "bitflag", "prim"):
+        if arg.kind in ("enum", "bitflag"):
             return [int(value)]
+        if arg.kind == "prim":
+            return [float(value) if _is_float(arg.ref) else int(value)]
         if arg.kind == "c_void":
-            raise Unsupported(f"raw-pointer argument {arg.py!r} not yet supported")
+            # Raw data: accept any buffer-like object (bytes, bytearray,
+            # memoryview, array.array, numpy array, ...).
+            if value is None:
+                return [self.ffi.NULL]
+            cdata = self.ffi.from_buffer(value, require_writable=False)
+            keep.append(cdata)
+            return [cdata]
         raise Unsupported(f"argument kind {arg.kind!r}")
 
     def _unwrap(self, value):
@@ -78,27 +105,44 @@ class Invoker:
 
     # -- return wrapping ---------------------------------------------------
 
-    def wrap_return(self, method, c_ret, pump=None):
+    def wrap_return(self, method, c_ret, pump=None, parent=None, py_args=()):
         kind, ref = method.ret_kind, method.ret_ref
         if kind is None:
             return None
         if kind == "object":
             if not c_ret:  # NULL
                 return None if method.ret_optional else c_ret
-            return self._wrap_object(ref, c_ret, pump)
+            return self._wrap_object(ref, c_ret, pump, parent)
+        if kind == "c_void":
+            # A raw pointer return is mapped memory (e.g. get_mapped_range):
+            # expose it as a writable memoryview over the GPU-owned bytes. The
+            # length comes from the call's own ``size`` argument.
+            if not c_ret:
+                return None
+            size = self._size_arg(method, py_args)
+            if size is None:
+                raise Unsupported(f"{method.c_func}: cannot size the returned pointer")
+            return memoryview(self.ffi.buffer(c_ret, size))
         if kind == "enum":
             return getattr(self.enums, _py(ref))(c_ret)
         if kind == "bitflag":
             return getattr(self.flags, _py(ref))(c_ret)
         if kind == "prim":
             return bool(c_ret) if ref == "bool" else c_ret
-        if kind in ("struct", "c_void"):
-            raise Unsupported(f"{kind} return not yet supported ({method.c_func})")
+        if kind == "struct":
+            raise Unsupported(f"struct return not yet supported ({method.c_func})")
         return c_ret
 
-    def _wrap_object(self, ref, handle, pump=None):
+    @staticmethod
+    def _size_arg(method, py_args):
+        for arg, value in zip(method.args, py_args):
+            if arg.py == "size":
+                return int(value)
+        return None
+
+    def _wrap_object(self, ref, handle, pump=None, parent=None):
         cls = self.registry.get(ref)
-        return cls(handle, pump) if cls is not None else handle
+        return cls(handle, pump, parent) if cls is not None else handle
 
     # -- the call ----------------------------------------------------------
 
@@ -108,11 +152,13 @@ class Invoker:
         c_args, keep = self.marshal_args(method, py_args)
         cfunc = getattr(self.lib, method.c_func)
         if method.is_async:
-            return self._call_async(method, cfunc, self_handle, c_args, keep, pump)
+            return self._call_async(
+                method, cfunc, self_handle, c_args, keep, pump, caller
+            )
         c_ret = cfunc(self_handle, *c_args)
-        return self.wrap_return(method, c_ret, pump)
+        return self.wrap_return(method, c_ret, pump, caller, py_args)
 
-    def _call_async(self, method, cfunc, self_handle, c_args, keep, pump):
+    def _call_async(self, method, cfunc, self_handle, c_args, keep, pump, caller=None):
         if pump is None:
             raise RuntimeError(f"{method.py}() is async but no event pump is available")
         future = WgpuFuture(pump)
@@ -134,14 +180,18 @@ class Invoker:
                     msg = _message(self.ffi, rest)
                     future.set_error(RuntimeError(f"{method.py} failed: {msg}"))
                 elif result_ref is not None:
-                    future.set_result(self._wrap_object(result_ref, rest[0], pump))
+                    future.set_result(
+                        self._wrap_object(result_ref, rest[0], pump, caller)
+                    )
                 else:
                     future.set_result(int(status))
             except BaseException as exc:  # noqa: BLE001
                 future.set_error(exc)
 
         info.callback = _cb
-        future._keep = (info, _cb, keep)  # keep alive until the callback fires
+        # Keep everything the pending callback depends on alive until it fires
+        # (including the caller, whose ancestry backs the event pump).
+        future._keep = (info, _cb, keep, caller)
         cfunc(self_handle, *c_args, info[0])
         return future
 
@@ -151,6 +201,10 @@ def _message(ffi, rest) -> str:
         if isinstance(item, ffi.CData) and "StringView" in ffi.getctype(ffi.typeof(item)):
             return ffi.string(item.data, item.length).decode("utf-8", "replace") if item.data else ""
     return ""
+
+
+def _is_float(ref: str | None) -> bool:
+    return bool(ref) and ref.startswith(("float", "nullable_float"))
 
 
 def _py(spec_name: str) -> str:

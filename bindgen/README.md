@@ -70,8 +70,9 @@ been built.
 | Generate method table + `GPU*` classes | ✅ done (23 classes, 146 methods) |
 | Runtime invoker (marshal args, wrap returns, release) | ✅ done (sync path) |
 | Async future primitive (poll-driven, sniffio) | ✅ done (sync `.wait()` + `await`) |
-| Array / raw-pointer args, struct out-returns | ⏳ next |
-| Buffer mapping (memoryview) | ⏳ planned |
+| Array + raw-data (c_void) args | ✅ done |
+| Buffer mapping → memoryview | ✅ done |
+
 
 Validated end-to-end against **Mesa lavapipe (llvmpipe)**: the async chain
 `instance → request_adapter → request_device` resolves a real `GPUDevice` via
