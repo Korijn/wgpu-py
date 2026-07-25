@@ -32,8 +32,15 @@ def case(name, count):
     return register
 
 
-def _timeit(func, count) -> float:
-    """Best-of-5 seconds per operation, with the GC quiesced."""
+def _timeit(func, count, settle=None) -> float:
+    """Best-of-5 seconds per operation, with the GC quiesced.
+
+    ``settle`` is called between repeats to let wgpu-native reclaim dropped
+    resources. Without it, creating and discarding GPU objects in a loop gets
+    steadily slower -- in *both* implementations, since the cost is inside
+    wgpu-native -- and the benchmark would measure accumulated garbage rather
+    than the Python layer.
+    """
     gc.collect()
     gc.disable()
     try:
@@ -41,7 +48,11 @@ def _timeit(func, count) -> float:
         for _ in range(5):
             start = time.perf_counter()
             func(count)
-            best = min(best, time.perf_counter() - start)
+            elapsed = time.perf_counter() - start
+            best = min(best, elapsed)
+            if settle is not None:
+                gc.collect()
+                settle()
     finally:
         gc.enable()
     return best / count
@@ -123,14 +134,16 @@ def build_cases(wgpu, device):
     add("set_bind_group", 20000, set_bind_group_calls)
 
     def encoder_churn(n):
+        # Submitting is what a real frame does, and it is also what lets
+        # wgpu-native retire the command buffer instead of banking it.
         for _ in range(n):
             encoder = device.create_command_encoder()
             cpass = encoder.begin_compute_pass()
             cpass.set_pipeline(pipeline)
             cpass.end()
-            encoder.finish()
+            device.queue.submit([encoder.finish()])
 
-    add("record_pass", 2000, encoder_churn)
+    add("record_pass", 500, encoder_churn)
 
     # -- data transfer -----------------------------------------------------
 
@@ -169,10 +182,17 @@ def main():
         device = wgpu.gpu.request_adapter_sync().request_device_sync()
     startup = time.perf_counter() - t0
 
+    def settle():
+        """Give wgpu-native a chance to reclaim what the last repeat dropped."""
+        try:
+            device._pump()
+        except AttributeError:  # the classic implementation polls on its own
+            device._poll()
+
     results = {"startup_device": startup}
     for name, count, func in build_cases(wgpu, device):
         func(min(count, 50))  # warm up
-        results[name] = _timeit(func, count)
+        results[name] = _timeit(func, count, settle)
         print(f"{name:<28} {results[name] * 1e6:>10.3f} us/op")
     print(f"{'startup_device':<28} {startup * 1e3:>10.1f} ms")
 

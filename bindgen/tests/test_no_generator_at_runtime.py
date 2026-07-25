@@ -7,6 +7,7 @@ guards that boundary both statically and by executing the real call path with
 """
 
 import builtins
+import re
 import subprocess
 import sys
 import textwrap
@@ -18,12 +19,14 @@ from bindgen.generate import GENERATED_DIR
 
 
 def test_no_source_level_bindgen_imports():
-    """Static check: nothing under wgpu/_runtime, _generated or _compat imports bindgen."""
+    """Static check: no shipped module imports the development-only generator."""
     offenders = []
-    for sub in ("_runtime", "_generated", "_compat", "_native"):
+    # Match real import statements only: the generated files name the generator
+    # in their "do not edit" banner, which is documentation, not a dependency.
+    pattern = re.compile(r"^\s*(from|import)\s+bindgen\b", re.MULTILINE)
+    for sub in ("_runtime", "_generated", "_api", "_native"):
         for path in (paths.REPO_ROOT / "wgpu" / sub).rglob("*.py"):
-            text = path.read_text()
-            if "from bindgen" in text or "import bindgen" in text:
+            if pattern.search(path.read_text()):
                 offenders.append(str(path.relative_to(paths.REPO_ROOT)))
     assert not offenders, f"runtime modules must not import the generator: {offenders}"
 
@@ -47,18 +50,18 @@ def test_runtime_works_without_bindgen_installed():
         builtins.__import__ = _guard
 
         from wgpu._runtime.api import get_api
-        from wgpu._generated import flags
+        from wgpu._generated import apiflags as flags
         api = get_api()
         instance = api.create_instance()
-        adapter = instance.request_adapter().wait()
+        adapter = instance.request_adapter().sync_wait()
         if adapter is None or not adapter._handle:
             print("SKIP")           # no driver in this environment
         else:
-            device = adapter.request_device().wait()
+            device = adapter.request_device_sync()
             buf = device.create_buffer(
-                {{"label": "x", "size": 16, "usage": int(flags.BufferUsage.map_read)}}
+                label="x", size=16, usage=flags.BufferUsage.MAP_READ
             )
-            device.get_queue()      # object return wrapping
+            device.queue            # object return wrapping
             del buf                 # release() via the generated release_func
             print("OK")
         """

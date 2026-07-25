@@ -32,9 +32,11 @@ def builder():
     from wgpu._runtime.structs import StructBuilder
 
     structs = _load("structs").STRUCTS
-    flags = _load("flags")
+    flags = _load("apiflags")
+    enums = _load("apienums")
     constants = _load("constants")
-    return StructBuilder(native.ffi, structs, constants), native.ffi, flags
+    builder = StructBuilder(native.ffi, structs, constants, enums, flags)
+    return builder, native.ffi, flags
 
 
 def test_scalar_string_and_flags(builder):
@@ -43,15 +45,19 @@ def test_scalar_string_and_flags(builder):
         "buffer_descriptor",
         {
             "label": "vertices",
-            "usage": flags.BufferUsage.vertex | flags.BufferUsage.copy_dst,
+            "usage": flags.BufferUsage.VERTEX | flags.BufferUsage.COPY_DST,
             "size": 4096,
             "mapped_at_creation": False,
         },
     )
     assert ffi.string(ptr.label.data, ptr.label.length) == b"vertices"
-    assert ptr.usage == int(flags.BufferUsage.vertex | flags.BufferUsage.copy_dst)
+    assert ptr.usage == flags.BufferUsage.VERTEX | flags.BufferUsage.COPY_DST
     assert ptr.size == 4096
     assert ptr.mappedAtCreation == 0
+
+    # The same flags spelled as a string, as the public API also accepts.
+    ptr2, _keep2 = b.new("buffer_descriptor", {"usage": "VERTEX|COPY_DST", "size": 8})
+    assert ptr2.usage == ptr.usage
 
 
 def test_default_applied_when_omitted(builder):

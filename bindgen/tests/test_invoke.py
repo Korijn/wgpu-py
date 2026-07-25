@@ -45,8 +45,9 @@ def test_return_wrapping_enum(api):
     method = api._methods[("buffer", "get_map_state")]
     from wgpu._generated import enums
 
+    # Enum returns come back as the public *string*, not the C integer.
     wrapped = api.invoker.wrap_return(method, int(enums.BufferMapState.unmapped))
-    assert wrapped == enums.BufferMapState.unmapped
+    assert wrapped == "unmapped"
 
 
 def test_create_instance_and_release(api):
@@ -64,4 +65,7 @@ def test_signatures_are_introspectable(api):
     import inspect
 
     sig = inspect.signature(api.registry["device"].create_buffer)
-    assert list(sig.parameters) == ["self", "descriptor"]
+    # Descriptor-taking methods are flattened into keyword arguments, so the
+    # signature shows the descriptor's fields rather than "descriptor".
+    assert list(sig.parameters) == ["self", "label", "size", "usage",
+                                    "mapped_at_creation"]

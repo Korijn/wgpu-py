@@ -190,7 +190,7 @@ class Invoker:
         if fast is _UNCOMPILED:
             fast = self._fast[method.c_func] = self._compile(method)
         if fast is not None:
-            return fast(caller._handle, py_args)
+            return fast(caller, py_args)
         return self._call_general(method, caller, py_args)
 
     def _compile(self, method):
@@ -229,22 +229,29 @@ class Invoker:
                 return None
         n_args = len(converters)
 
-        # Returns are resolved to a single wrapper, chosen once.
+        # Returns are resolved to a single wrapper, chosen once. An object
+        # return still needs the caller, since the new object inherits its
+        # event pump and keeps it alive as its parent -- so the wrapper takes
+        # the caller rather than just the raw C value.
         ret_kind, ret_ref = method.ret_kind, method.ret_ref
-        if ret_kind is None:
-            wrap = None
-        elif ret_kind == "prim" and ret_ref != "bool":
-            wrap = None  # the C value is already what we want
+        if ret_kind is None or (ret_kind == "prim" and ret_ref != "bool"):
+            wrap = None  # void, or a C value that is already what we want
+        elif ret_kind == "object":
+            def wrap(value, caller):
+                if not value:
+                    return None if method.ret_optional else value
+                return self._wrap_object(ret_ref, value, caller._pump, caller)
         else:
-            wrap = lambda value: self.wrap_return(method, value)  # noqa: E731
+            def wrap(value, caller):
+                return self.wrap_return(method, value)
 
-        def fast_call(handle, py_args, _c=cfunc, _conv=converters, _n=n_args):
+        def fast_call(caller, py_args, _c=cfunc, _conv=converters, _n=n_args):
             if len(py_args) != _n:
                 raise TypeError(
                     f"{method.py}() takes {_n} args, got {len(py_args)}"
                 )
-            result = _c(handle, *[f(v) for f, v in zip(_conv, py_args)])
-            return wrap(result) if wrap is not None else result
+            result = _c(caller._handle, *[f(v) for f, v in zip(_conv, py_args)])
+            return result if wrap is None else wrap(result, caller)
 
         return fast_call
 

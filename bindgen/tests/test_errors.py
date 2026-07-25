@@ -24,21 +24,21 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture(scope="module")
 def compat():
     sys.path.insert(0, str(paths.REPO_ROOT))
-    from wgpu import _compat
+    import wgpu
 
-    return _compat
+    return wgpu
 
 
 @pytest.fixture(scope="module")
 def device(compat):
     try:
-        return compat.get_default_device()
+        return compat.utils.get_default_device()
     except RuntimeError as exc:
         pytest.skip(f"no adapter available: {exc}")
 
 
 def test_validation_error_raises(device):
-    from wgpu._runtime.errors import GPUValidationError
+    from wgpu import GPUValidationError
 
     with pytest.raises(GPUValidationError) as excinfo:
         device.create_buffer(size=16, usage=0)  # invalid usage flags
@@ -47,7 +47,7 @@ def test_validation_error_raises(device):
 
 def test_device_survives_a_validation_error(device):
     """An error must not poison the device: valid work still succeeds after it."""
-    from wgpu._runtime.errors import GPUValidationError
+    from wgpu import GPUValidationError
 
     with pytest.raises(GPUValidationError):
         device.create_buffer(size=16, usage=0)
@@ -63,10 +63,10 @@ def test_error_does_not_abort_the_process():
         f"""
         import sys
         sys.path.insert(0, {str(paths.REPO_ROOT)!r})
-        from wgpu import _compat
-        from wgpu._runtime.errors import GPUValidationError
+        import wgpu
+        from wgpu import GPUValidationError
         try:
-            device = _compat.get_default_device()
+            device = wgpu.utils.get_default_device()
         except RuntimeError:
             print("SKIP"); raise SystemExit(0)
         try:

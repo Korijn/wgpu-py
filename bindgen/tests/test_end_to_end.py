@@ -26,10 +26,10 @@ def device():
 
     instance = get_api().create_instance()
     future = instance.request_adapter()
-    adapter = future.wait()
+    adapter = future.sync_wait()
     if adapter is None or not adapter._handle:
         pytest.skip("no adapter available (install a Vulkan driver, e.g. lavapipe)")
-    return adapter.request_device().wait()
+    return adapter.request_device_sync()
 
 
 def test_async_chain_yields_device(device):
@@ -40,24 +40,18 @@ def test_async_chain_yields_device(device):
 
 
 def test_sync_object_returns(device):
-    queue = device.get_queue()
+    queue = device.queue
     assert type(queue).__name__ == "GPUQueue"
     encoder = device.create_command_encoder()  # optional descriptor omitted
     assert type(encoder).__name__ == "GPUCommandEncoder"
 
 
 def test_create_buffer_struct_arg(device):
-    from wgpu._generated import flags
-
-    buf = device.create_buffer(
-        {
-            "label": "vbuf",
-            "usage": flags.BufferUsage.copy_src | flags.BufferUsage.copy_dst,
-            "size": 256,
-        }
-    )
+    """The descriptor is flattened into keyword arguments by the generator."""
+    buf = device.create_buffer(label="vbuf", usage="COPY_SRC|COPY_DST", size=256)
     assert type(buf).__name__ == "GPUBuffer"
-    assert buf.get_size() == 256  # scalar return
+    assert buf.label == "vbuf"
+    assert buf.size == 256  # scalar return
 
 
 def test_gpu_data_roundtrip(device):
@@ -68,23 +62,18 @@ def test_gpu_data_roundtrip(device):
     """
     from wgpu._generated import flags
 
-    usage = flags.BufferUsage
     data = bytes(range(16))
 
-    queue = device.get_queue()
-    src = device.create_buffer(
-        {"label": "src", "usage": usage.copy_src | usage.copy_dst, "size": 16}
-    )
-    dst = device.create_buffer(
-        {"label": "dst", "usage": usage.copy_dst | usage.map_read, "size": 16}
-    )
+    queue = device.queue
+    src = device.create_buffer(label="src", usage="COPY_SRC|COPY_DST", size=16)
+    dst = device.create_buffer(label="dst", usage="COPY_DST|MAP_READ", size=16)
 
-    queue.write_buffer(src, 0, data, len(data))  # c_void data arg
+    queue.write_buffer(src, 0, data)  # c_void data arg
     encoder = device.create_command_encoder()
     encoder.copy_buffer_to_buffer(src, 0, dst, 0, 16)
     queue.submit([encoder.finish()])  # array arg -> (count, ptr)
 
-    assert dst.map_async(int(flags.MapMode.read), 0, 16).wait() == 1
+    assert dst.map_async("READ", 0, 16).sync_wait() == 1
     view = dst.get_mapped_range(0, 16)  # c_void return -> memoryview
     assert isinstance(view, memoryview)
     assert bytes(view) == data
