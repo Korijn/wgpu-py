@@ -72,15 +72,36 @@ been built.
 | Async future primitive (poll-driven, sniffio) | ✅ done (sync `.wait()` + `await`) |
 | Array + raw-data (c_void) args | ✅ done |
 | Buffer mapping → memoryview | ✅ done |
+| Minimal compatibility shim (current wgpu-py API) | ⏳ in progress |
+| cibuildwheel matrix (all OS/arch) | ⏳ planned |
 
+## Validating against the existing test suite
+
+The library built from the submodule can be driven by the *existing* (old)
+wgpu-py implementation via `WGPU_LIB_PATH`, which validates the native build
+against the full historical test suite:
+
+```bash
+cd wgpu-native && cargo build --release --lib && cd ..
+export WGPU_LIB_PATH=$PWD/wgpu-native/target/release/libwgpu_native.so
+export PYTHONPATH=$PWD          # so subprocess-based tests can import wgpu
+python -m pytest tests -q
+```
+
+On Mesa lavapipe this passes **235 tests** (1 skipped), confirming the
+from-source build is fully functional. A software driver is enough:
+
+```bash
+apt-get install -y mesa-vulkan-drivers   # lavapipe/llvmpipe
+```
+
+## End-to-end validation of the generated layer
 
 Validated end-to-end against **Mesa lavapipe (llvmpipe)**: the async chain
 `instance → request_adapter → request_device` resolves a real `GPUDevice` via
-both `.wait()` and `await`, and sync methods (`get_queue`,
-`create_command_encoder`, `create_buffer`, scalar/enum/object returns) work
-against the live driver.
-| Minimal compatibility shim (current wgpu-py API) | ⏳ planned |
-| cibuildwheel matrix (all OS/arch) | ⏳ planned |
+both `.wait()` and `await`, and a full data round-trip (`write_buffer` →
+`copy_buffer_to_buffer` → `submit` → `map_async` → `get_mapped_range`) returns
+the exact bytes written.
 
 The high-level naming derivation is validated against the compiled extension:
 408 enum constants, 292 struct fields, 31 bitflags, 146 object methods and 4
