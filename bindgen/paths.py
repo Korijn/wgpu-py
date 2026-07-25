@@ -23,6 +23,23 @@ WEBGPU_JSON = WEBGPU_HEADERS_DIR / "webgpu.json"
 WEBGPU_IDL = Path(__file__).resolve().parent / "resources" / "webgpu.idl"
 
 
+#: wgpu-native's own list of C functions it declares but does not implement.
+#: Calling one aborts the process (a Rust ``unimplemented!()`` cannot unwind
+#: across FFI), so the generator reads this to emit a guard instead of a call.
+UNIMPLEMENTED_RS = NATIVE_ROOT / "src" / "unimplemented.rs"
+
+
+def unimplemented_functions() -> frozenset[str]:
+    """The C functions wgpu-native declares but does not implement."""
+    import re
+
+    if not UNIMPLEMENTED_RS.exists():
+        return frozenset()
+    return frozenset(
+        re.findall(r'pub extern "C" fn (wgpu\w+)', UNIMPLEMENTED_RS.read_text())
+    )
+
+
 def static_lib_path(profile: str = "release") -> Path:
     """Path to the compiled ``libwgpu_native`` static archive."""
     if sys.platform.startswith("win"):

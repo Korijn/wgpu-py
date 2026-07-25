@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from wgpu._api import overrides as _ov
+from wgpu._api.base import unimplemented as _unimplemented
 from wgpu._api.base import GPUObjectBase, Mixin, new_object as _new_object
 from wgpu._api.types import ArrayLike, CanvasLike
 from wgpu._generated import apienums as enums
@@ -353,11 +354,11 @@ class GPUDevice(GPUObjectBase):
 
     def create_compute_pipeline_async(self, *, label: str = "", layout: GPUPipelineLayout | enums.AutoLayoutModeEnum, compute: structs.ProgrammableStageStruct) -> GPUComputePipeline:
         """GPUDevice.createComputePipelineAsync -- see the WebGPU specification."""
-        return self._promise(self._call_desc('create_compute_pipeline_async', {'label': label, 'layout': layout, 'compute': compute}))
+        return self._promise(_unimplemented('wgpuDeviceCreateComputePipelineAsync'))
 
     def create_render_pipeline_async(self, *, label: str = "", layout: GPUPipelineLayout | enums.AutoLayoutModeEnum, vertex: structs.VertexStateStruct, primitive: structs.PrimitiveStateStruct | None = None, depth_stencil: structs.DepthStencilStateStruct | None = None, multisample: structs.MultisampleStateStruct | None = None, fragment: structs.FragmentStateStruct | None = None) -> GPURenderPipeline:
         """GPUDevice.createRenderPipelineAsync -- see the WebGPU specification."""
-        return self._promise(self._call_desc('create_render_pipeline_async', {'label': label, 'layout': layout, 'vertex': vertex, 'primitive': primitive, 'depth_stencil': depth_stencil, 'multisample': multisample, 'fragment': fragment}))
+        return self._promise(_unimplemented('wgpuDeviceCreateRenderPipelineAsync'))
 
     def create_command_encoder(self, *, label: str = "") -> GPUCommandEncoder:
         """GPUDevice.createCommandEncoder -- see the WebGPU specification."""
@@ -636,11 +637,11 @@ class GPUShaderModule(GPUObjectBase):
 
     def get_compilation_info_async(self) -> GPUCompilationInfo:
         """GPUShaderModule.getCompilationInfo -- see the WebGPU specification."""
-        return self._promise(self._call('get_compilation_info'))
+        return self._promise(_unimplemented('wgpuShaderModuleGetCompilationInfo'))
 
     def get_compilation_info_sync(self) -> GPUCompilationInfo:
         """GPUShaderModule.getCompilationInfo -- see the WebGPU specification."""
-        return self._await(self._call('get_compilation_info'))
+        return self._await(_unimplemented('wgpuShaderModuleGetCompilationInfo'))
 
     get_compilation_info = _ov.deprecated_sync_or_async('get_compilation_info')
 

@@ -456,6 +456,7 @@ def generate_api_classes(b: bridge.Bridge, spec: dict, native=None) -> str:
         "from collections.abc import Sequence",
         "",
         "from wgpu._api import overrides as _ov",
+        "from wgpu._api.base import unimplemented as _unimplemented",
         "from wgpu._api.base import GPUObjectBase, Mixin, new_object as _new_object",
         "from wgpu._api.types import ArrayLike, CanvasLike",
         "from wgpu._generated import apienums as enums",
@@ -767,6 +768,26 @@ def _direct_body(b, spec_object, spec_method, params, binds, native) -> str | No
     return f"_new_object({cls}, {call}, self)"
 
 
+def _unimplemented_body(spec_object, spec_method) -> str | None:
+    """A guard for C functions wgpu-native declares but does not implement.
+
+    Calling one aborts the process outright -- a Rust ``unimplemented!()``
+    cannot unwind across FFI -- so these must never reach C. The list comes
+    from wgpu-native's own source, so a submodule bump that implements one
+    silently turns the guard back into a real call.
+    """
+    from . import naming
+
+    if spec_object is None:
+        return None
+    c_func = naming.c_method_func(spec_object, spec_method["name"])
+    if c_func not in paths.unimplemented_functions():
+        return None
+    return (
+        f"_unimplemented({c_func!r})"
+    )
+
+
 def _emit_method(
     b, cls_name, fn_name, line, spec_method, interface, spec_object=None,
     binds=None, native=None,
@@ -794,7 +815,9 @@ def _emit_method(
     )
     if flattened:
         sig, mapping = _flatten_descriptor(b, params[0].typename)
-        call = f"self._call_desc({spec_method['name']!r}, {mapping})"
+        call = _unimplemented_body(spec_object, spec_method) or (
+            f"self._call_desc({spec_method['name']!r}, {mapping})"
+        )
         decl = f"def {_ident(py)}(self, *, {sig}) -> {ann}:" if sig else (
             f"def {_ident(py)}(self) -> {ann}:"
         )
@@ -816,8 +839,8 @@ def _emit_method(
                 sig_parts.append(f"{name}: {pann} = {default}")
         sig = ", ".join(sig_parts)
         passthrough = "".join(f", {n}" for n in names)
-        call = None
-        if not is_async and binds is not None:
+        call = _unimplemented_body(spec_object, spec_method)
+        if call is None and not is_async and binds is not None:
             call = _direct_body(b, spec_object, spec_method, params, binds, native)
         if call is None:
             call = f"self._call({spec_method['name']!r}{passthrough})"

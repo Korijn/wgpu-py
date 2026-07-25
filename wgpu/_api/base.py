@@ -149,3 +149,17 @@ def new_object(cls, handle, parent):
     if not handle:
         return None
     return cls(handle, parent._pump, parent)
+
+
+def unimplemented(c_func: str):
+    """Refuse to call a C function wgpu-native does not implement.
+
+    wgpu-native declares the whole WebGPU surface but leaves some functions as
+    ``unimplemented!()``. A Rust panic cannot unwind across FFI, so calling one
+    aborts the interpreter -- an exception is strictly better. The generator
+    reads wgpu-native's own list, so if a release implements one of these the
+    guard disappears on the next regeneration.
+    """
+    raise NotImplementedError(
+        f"{c_func} is declared by wgpu-native but not implemented by it."
+    )
