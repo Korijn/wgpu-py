@@ -138,3 +138,14 @@ class GPUObjectBase(Mixin):
             self._release()
         except Exception:  # pragma: no cover - interpreter shutdown
             pass
+
+
+def new_object(cls, handle, parent):
+    """Wrap a handle a direct C call returned.
+
+    The new object inherits its parent's event pump and holds a reference to
+    it, so the ancestry that backs async work stays alive.
+    """
+    if not handle:
+        return None
+    return cls(handle, parent._pump, parent)

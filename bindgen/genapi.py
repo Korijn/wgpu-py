@@ -394,12 +394,33 @@ IMMUTABLE_ATTRS = {
 #: descriptor-taking method, matching ``GPUObjectDescriptorBase``.
 _LABEL_PARAM = 'label: str = ""'
 
+# ---- direct calls ----------------------------------------------------------
+#
+# Command recording is the hot path: a frame issues thousands of draws and
+# state changes, and profiling showed almost all of that time going into
+# marshalling layers rather than the C call. For the methods whose arguments
+# need no allocation, the generator emits a body that calls the bound C
+# function straight away -- no descriptor lookup, no argument loop, no
+# per-call conversion that cffi would do anyway.
+#
+# The cost of that directness is that these calls do not check for a pending
+# wgpu-native error. Errors still surface, at the next call that does check --
+# in practice ``finish()`` or ``submit()``, since both take a descriptor or an
+# array and so use the general path. That is the same place the classic
+# implementation reported them.
+
+#: Argument kinds a direct call can pass through without allocating.
+DIRECT_ARG_KINDS = frozenset({"prim", "enum", "bitflag", "object"})
+
+#: Return kinds a direct call can produce with at most one inline conversion.
+DIRECT_RET_KINDS = frozenset({None, "prim", "object", "enum", "bitflag"})
+
 
 def _method_doc(cls: str, name: str, kind: str) -> str:
     return f"{cls}.{name} ({kind})"
 
 
-def generate_api_classes(b: bridge.Bridge, spec: dict) -> str:
+def generate_api_classes(b: bridge.Bridge, spec: dict, native=None) -> str:
     """Emit the public ``GPU*`` classes with real WebGPU signatures.
 
     Descriptor-taking methods are flattened into keyword arguments (the IDL says
@@ -411,6 +432,21 @@ def generate_api_classes(b: bridge.Bridge, spec: dict) -> str:
     the interesting behaviour lives in ``wgpu._api``, not in 150 wrappers.
     """
     objects = {o["name"]: o for o in spec["objects"]}
+    binds: set = set()
+    names = [n for n in sorted(b.idl.classes) if n not in PYTHON_SIDE_CLASSES]
+
+    body: list[str] = []
+    for cls_name in _in_dependency_order(b, names):
+        if cls_name in PYTHON_SIDE_CLASSES:
+            continue
+        interface = b.idl.classes[cls_name]
+        proxy = MIXIN_REPRESENTATIVE.get(cls_name, cls_name)
+        spec_object = b.classes.get(proxy)
+        body.extend(
+            _emit_class(b, cls_name, interface, spec_object, objects, proxy,
+                        binds, native)
+        )
+
     lines = [
         _BANNER,
         '"""The public ``GPU*`` classes."""',
@@ -420,29 +456,58 @@ def generate_api_classes(b: bridge.Bridge, spec: dict) -> str:
         "from collections.abc import Sequence",
         "",
         "from wgpu._api import overrides as _ov",
-        "from wgpu._api.base import GPUObjectBase, Mixin",
+        "from wgpu._api.base import GPUObjectBase, Mixin, new_object as _new_object",
         "from wgpu._api.types import ArrayLike, CanvasLike",
         "from wgpu._generated import apienums as enums",
         "from wgpu._generated import apiflags as flags",
         "from wgpu._generated import apistructs as structs",
         "",
     ]
-    names = [n for n in sorted(b.idl.classes) if n not in PYTHON_SIDE_CLASSES]
+    lines += _emit_bindings(binds)
     lines.append("__all__ = [")
     lines += [f"    {n!r}," for n in names]
     lines.append("]")
     lines.append("")
-
-    for cls_name in _in_dependency_order(b, names):
-        if cls_name in PYTHON_SIDE_CLASSES:
-            continue
-        interface = b.idl.classes[cls_name]
-        proxy = MIXIN_REPRESENTATIVE.get(cls_name, cls_name)
-        spec_object = b.classes.get(proxy)
-        lines.extend(
-            _emit_class(b, cls_name, interface, spec_object, objects, proxy)
-        )
+    lines.extend(body)
     return "\n".join(lines)
+
+
+def _emit_bindings(binds: set) -> list[str]:
+    """Bind, once at import, everything the direct call bodies reference.
+
+    Resolving these here is the whole point: a hot method body becomes a single
+    call to an already-bound C function, with no lookups left to do.
+    """
+    if not binds:
+        return []
+    lines = [
+        "# Bound once at import so the hot methods below are a single C call.",
+        "from wgpu._native import ffi as _ffi, lib as _lib",
+        "",
+    ]
+    kinds = {kind for kind, _ in binds}
+    if "null" in kinds:
+        lines.append("_NULL = _ffi.NULL")
+    for width in sorted(w for k, w in binds if k == "whole"):
+        # WGPU_WHOLE_SIZE / WGPU_WHOLE_MAP_SIZE, per parameter width.
+        lines.append(f"_WHOLE{width} = {(1 << width) - 1}")
+    if "enum_out" in kinds:
+        lines.append("")
+        lines.append("def _enum_out(table, value):")
+        lines.append('    """A C enum value as its public string."""')
+        lines.append("    return table.get(value, value)")
+        lines.append("")
+    for ref in sorted(r for k, r in binds if k == "enum"):
+        lines.append(f"_E_{ref} = enums.TO_INT[{ref!r}]")
+    for ref in sorted(r for k, r in binds if k == "bitflag"):
+        lines.append(f"_F_{ref} = flags.TO_INT[{ref!r}]")
+    for ref in sorted(r for k, r in binds if k == "enum_out"):
+        lines.append(f"_R_{ref} = enums.FROM_INT[{ref!r}]")
+    for func in sorted(f for k, f in binds if k == "func"):
+        lines.append(f"_c_{func} = _lib.{func}")
+    lines.append("")
+    lines.append("")
+    return lines
 
 
 def _in_dependency_order(b, names):
@@ -463,7 +528,8 @@ def _in_dependency_order(b, names):
     return ordered
 
 
-def _emit_class(b, cls_name, interface, spec_object, objects, proxy) -> list[str]:
+def _emit_class(b, cls_name, interface, spec_object, objects, proxy,
+                binds=None, native=None) -> list[str]:
     bases = [
         base
         for base in interface.bases
@@ -497,8 +563,21 @@ def _emit_class(b, cls_name, interface, spec_object, objects, proxy) -> list[str
         if spec_method not in spec_methods:
             continue  # web-only, or lives on a hand-written class
         body += _emit_method(
-            b, cls_name, fn_name, line, spec_methods[spec_method], interface
+            b, cls_name, fn_name, line, spec_methods[spec_method], interface,
+            spec_object=(None if cls_name in MIXIN_REPRESENTATIVE else spec_object),
+            binds=binds, native=native,
         )
+    # Methods a mixin contributes are declared once but implemented by a
+    # *different* C function per concrete object (draw is
+    # wgpuRenderPassEncoderDraw here, wgpuRenderBundleEncoderDraw there). The
+    # mixin therefore keeps the general-path body, and each concrete class gets
+    # a direct override bound to its own C function -- which matters, because
+    # these are the methods a frame calls thousands of times.
+    if spec_object and cls_name not in MIXIN_REPRESENTATIVE and native is not None:
+        body += _emit_mixin_overrides(
+            b, cls_name, interface, spec_object, spec_methods, binds, native
+        )
+
     for attr_name in interface.attributes:
         if (cls_name, attr_name) in HAND_WRITTEN_ATTRS:
             body += _emit_attr_hook(cls_name, attr_name)
@@ -507,6 +586,58 @@ def _emit_class(b, cls_name, interface, spec_object, objects, proxy) -> list[str
     if not body:
         body = ["    pass", ""]
     return lines + body
+
+
+def _emit_c_binding(b, cls_name, fn_name, spec_methods, spec_object, binds) -> list[str]:
+    """Expose a hand-written method's C function as a class attribute.
+
+    ``set_bind_group`` cannot be generated -- the web API slices a dynamic
+    offsets buffer that C takes as an array -- but its overwhelmingly common
+    case passes no offsets at all, and that case is one C call. Binding the
+    function per class lets the hand-written implementation take it.
+    """
+    from . import naming
+
+    spec_method = bridge.camel_to_snake(fn_name)
+    if spec_method not in spec_methods:
+        return []
+    c_func = naming.c_method_func(spec_object, spec_method)
+    binds.add(("func", c_func))
+    return [f"    _c_{spec_method} = staticmethod(_c_{c_func})", ""]
+
+
+def _emit_mixin_overrides(
+    b, cls_name, interface, spec_object, spec_methods, binds, native
+) -> list[str]:
+    """Emit direct-call overrides for the methods this class gets from mixins."""
+    out: list[str] = []
+    seen = set(interface.functions)
+    for base in interface.bases:
+        if base not in MIXIN_REPRESENTATIVE:
+            continue
+        for fn_name, line in b.idl.classes[base].functions.items():
+            if fn_name in seen:
+                continue
+            if (base, fn_name) in HAND_WRITTEN:
+                # The implementation is hand-written, but it still needs *this*
+                # class's C function to take a fast path of its own.
+                out += _emit_c_binding(b, cls_name, fn_name, spec_methods,
+                                       spec_object, binds)
+                seen.add(fn_name)
+                continue
+            seen.add(fn_name)
+            spec_method = bridge.camel_to_snake(fn_name)
+            if spec_method not in spec_methods:
+                continue
+            emitted = _emit_method(
+                b, cls_name, fn_name, line, spec_methods[spec_method],
+                interface, spec_object=spec_object, binds=binds, native=native,
+            )
+            # Only worth overriding if it actually compiled to a direct call;
+            # otherwise the inherited implementation is identical.
+            if any("_c_wgpu" in ln for ln in emitted):
+                out += emitted
+    return out
 
 
 def _override_prefix(cls_name: str) -> str:
@@ -559,7 +690,87 @@ def _emit_attr(b, cls_name, attr_name, spec_methods) -> list[str]:
     ]
 
 
-def _emit_method(b, cls_name, fn_name, line, spec_method, interface) -> list[str]:
+def _direct_body(b, spec_object, spec_method, params, binds, native) -> str | None:
+    """Return a direct C-call expression for this method, or None.
+
+    ``binds`` collects the module-level names the emitted body needs, so the
+    preamble can bind them once at import.
+    """
+    from . import generate, naming
+
+    if spec_object is None or native is None:
+        return None
+    ffi = native.ffi
+    args = spec_method.get("args", [])
+    if len(params) != len(args):
+        return None
+    parsed = [generate._parse_member_type(a["type"]) for a in args]
+    if any(is_array or kind not in DIRECT_ARG_KINDS for kind, _ref, is_array in parsed):
+        return None
+
+    ret = spec_method.get("returns")
+    ret_kind, ret_ref = (None, None)
+    if ret:
+        ret_kind, ret_ref, ret_array = generate._parse_member_type(ret["type"])
+        if ret_array or ret_kind not in DIRECT_RET_KINDS:
+            return None
+        if ret_kind == "object" and ret_ref not in b.classes.values():
+            return None  # returns an object with no public class
+
+    c_func = naming.c_method_func(spec_object, spec_method["name"])
+    c_sig = ffi.typeof(getattr(native.lib, c_func)).args
+    binds.add(("func", c_func))
+
+    exprs = []
+    for i, ((kind, ref, _), param, arg) in enumerate(zip(parsed, params, args)):
+        name = _ident(bridge.camel_to_snake(param.name))
+        omittable = not param.required and (param.default or "").strip() in (
+            None,
+            "",
+            "None",
+        )
+        if kind == "prim":
+            if omittable:
+                # An omitted size means "the rest of the resource"; C spells
+                # that as an all-ones sentinel of the parameter's own width.
+                width = ffi.sizeof(c_sig[i + 1]) * 8
+                binds.add(("whole", width))
+                exprs.append(f"(_WHOLE{width} if {name} is None else {name})")
+            else:
+                exprs.append(name)  # cffi coerces ints and floats itself
+        elif kind in ("enum", "bitflag"):
+            prefix = "_E_" if kind == "enum" else "_F_"
+            binds.add((kind, ref))
+            exprs.append(f"{prefix}{ref}[{name}]")
+        elif kind == "object":
+            if arg.get("optional") or omittable:
+                binds.add(("null", None))
+                exprs.append(f"({name}._handle if {name} is not None else _NULL)")
+            else:
+                exprs.append(f"{name}._handle")
+        else:  # pragma: no cover - guarded above
+            return None
+
+    call = f"_c_{c_func}(self._handle{''.join(', ' + e for e in exprs)})"
+    if ret_kind is None or (ret_kind == "prim" and ret_ref != "bool"):
+        return call
+    if ret_kind == "prim":  # bool
+        return f"bool({call})"
+    if ret_kind == "bitflag":
+        return call
+    if ret_kind == "enum":
+        binds.add(("enum_out", ret_ref))
+        return f"_enum_out(_R_{ret_ref}, {call})"
+    # object return: it inherits this object's event pump and keeps it alive
+    cls = next(k for k, v in b.classes.items() if v == ret_ref)
+    binds.add(("new_object", None))
+    return f"_new_object({cls}, {call}, self)"
+
+
+def _emit_method(
+    b, cls_name, fn_name, line, spec_method, interface, spec_object=None,
+    binds=None, native=None,
+) -> list[str]:
     py = bridge.camel_to_snake(fn_name)
     params = _params(line)
     is_async = line.strip().startswith("Promise<")
@@ -605,7 +816,11 @@ def _emit_method(b, cls_name, fn_name, line, spec_method, interface) -> list[str
                 sig_parts.append(f"{name}: {pann} = {default}")
         sig = ", ".join(sig_parts)
         passthrough = "".join(f", {n}" for n in names)
-        call = f"self._call({spec_method['name']!r}{passthrough})"
+        call = None
+        if not is_async and binds is not None:
+            call = _direct_body(b, spec_object, spec_method, params, binds, native)
+        if call is None:
+            call = f"self._call({spec_method['name']!r}{passthrough})"
         decl = f"def {_ident(py)}(self{', ' + sig if sig else ''}) -> {ann}:"
 
     doc = f'        """{cls_name}.{fn_name} -- see the WebGPU specification."""'

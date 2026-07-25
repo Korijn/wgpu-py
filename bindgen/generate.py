@@ -561,7 +561,7 @@ def write_all(out_dir: Path = GENERATED_DIR) -> list[Path]:
         ("apienums.py", genapi.generate_api_enums(bridge, lib)),
         ("apiflags.py", genapi.generate_api_flags(bridge)),
         ("apistructs.py", genapi.generate_api_structs(bridge)),
-        ("apiclasses.py", genapi.generate_api_classes(bridge, spec)),
+        ("apiclasses.py", genapi.generate_api_classes(bridge, spec, mod)),
     ]:
         path = out_dir / fname
         path.write_text(text)

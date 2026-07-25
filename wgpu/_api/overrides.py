@@ -9,6 +9,9 @@ that could be derived is being written by hand instead.
 from __future__ import annotations
 
 from wgpu._coreutils import logger
+from wgpu._native import ffi as _ffi
+
+_NULL = _ffi.NULL
 
 # -- sync/async duality ------------------------------------------------------
 
@@ -121,7 +124,12 @@ def queue_write_buffer(self, buffer, buffer_offset, data, data_offset=0, size=No
     The web API slices the source itself, so this takes ``data_offset``/``size``
     in *bytes* and hands wgpu-native only the resulting view.
     """
-    view = memoryview(data).cast("B")
+    view = data if isinstance(data, memoryview) else memoryview(data)
+    if data_offset == 0 and size is None:
+        # The common case: the whole source goes in, so there is nothing to
+        # slice and no need to re-cast to bytes.
+        return self._call("write_buffer", buffer, buffer_offset, view, view.nbytes)
+    view = view.cast("B")
     if size is None:
         size = view.nbytes - data_offset
     chunk = view[data_offset : data_offset + size]
@@ -155,6 +163,12 @@ def binding_commands_set_bind_group(
     The web API lets the caller pass a large offsets buffer plus a
     start/length window into it; C takes just the resulting array.
     """
+    if not dynamic_offsets_data and dynamic_offsets_data_start is None:
+        # The common case by far, and the one on the hot path: no dynamic
+        # offsets, so there is nothing to marshal and this is one C call.
+        return self._c_set_bind_group(
+            self._handle, index, bind_group._handle if bind_group else _NULL, 0, _NULL
+        )
     if dynamic_offsets_data_start is not None or dynamic_offsets_data_length is not None:
         if dynamic_offsets_data_start is None or dynamic_offsets_data_length is None:
             raise ValueError(

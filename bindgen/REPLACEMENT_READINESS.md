@@ -56,40 +56,68 @@ dict lookup, with no Python-level call on the success path.
 ## Performance
 
 Same wgpu-native build, same machine, same harness; only the Python layer
-differs (`python -m bindgen.tests.benchmark`).
+differs. Best of three runs each (`python -m bindgen.tests.benchmark`).
 
 | case | classic | generated | |
 | --- | ---: | ---: | --- |
-| device startup | 794.2 ms | **81.1 ms** | **9.8x faster** |
-| write_buffer | 20.2 us | **15.0 us** | 1.35x faster |
-| record_pass (submit) | 110.5 us | **87.0 us** | 1.27x faster |
-| dispatch_workgroups | 2.22 us | 2.35 us | 1.06x slower |
-| create_bind_group_layout | 22.1 us | 24.4 us | 1.11x slower |
-| set_bind_group | 3.46 us | 4.50 us | 1.30x slower |
-| create_buffer | 10.3 us | 14.8 us | 1.44x slower |
-| property reads | 0.12 us | 0.27 us | 2.2x slower |
+| device startup | 635.1 ms | **52.9 ms** | **12.0x faster** |
+| set_bind_group | 1.49 us | **0.25 us** | **6.1x faster** |
+| dispatch_workgroups | 1.37 us | **0.68 us** | **2.0x faster** |
+| create_bind_group_layout | 19.6 us | 20.6 us | 1.05x slower |
+| create_buffer | 9.65 us | 10.9 us | 1.13x slower |
+| record_pass | 65.2 us | 75.6 us | 1.16x slower |
+| write_buffer | 6.46 us | 9.04 us | 1.40x slower |
+| property reads | 0.083 us | 0.162 us | 1.94x slower |
 
-Startup dominates because the library is statically linked: no download, no
+The hot path -- the calls a frame makes thousands of times -- is where the win
+is. Startup is 12x because the library is statically linked: no download, no
 runtime version probe, far less import work.
 
-The hot path is at parity. Getting there needed two changes that profiling
-pointed at directly — 97% of per-call time was Python marshalling, with the C
-call itself at 3%:
+### How the hot path got there
 
-* **Compiled per-method calls.** The C function, its cffi signature and each
-  argument's converter are resolved once per method instead of on every call.
-* **Cached immutable properties.** A buffer's size, a texture's format and so on
-  are fixed at creation, so they are read once rather than crossing FFI on
-  every access in a render loop.
+Profiling was unambiguous: a raw cffi call costs 0.303 us, and the API was
+spending 1.4 us to make it. Worse, the largest single cost was the "fast path"
+that was supposed to help -- a per-call loop of argument converters that
+duplicated conversions cffi already does. Three changes closed it:
 
-The remaining cold-path gaps (`create_buffer`, `set_bind_group`) are descriptor
-marshalling through the generic struct builder; the same compilation technique
-would apply if they mattered, but they run once per resource, not per frame.
+* **Direct call bodies.** For methods whose arguments need no allocation, the
+  generator emits a body that calls an already-bound C function, with the
+  argument expressions inlined. `draw()` is now one Python frame and one C
+  call, landing within 10% of the raw-cffi floor.
+* **Per-class mixin overrides.** `draw` is declared once on a mixin but backed
+  by a different C function per object, so each concrete class gets its own
+  bound override rather than sharing a generic dispatch.
+* **`set_bind_group` fast case.** Its signature cannot be generated (the web
+  API slices a dynamic-offsets buffer), but the overwhelmingly common call
+  passes no offsets at all, and that case is a single C call.
+
+The cost, chosen deliberately: direct calls do not check for a pending
+wgpu-native error. Errors still surface, at the next call that does check --
+`finish()` or `submit()`, both of which take a descriptor or an array and so
+use the general path. That is where the classic implementation reported them
+too, and `test_direct_calls.py` pins it.
+
+The cases still slower than classic are all cold or mid paths that run once
+per resource rather than once per draw: descriptor marshalling through the
+generic struct builder, and cached property reads (a dict lookup rather than a
+plain attribute, 0.08 us each). The same generation technique would apply if
+profiling ever showed they mattered.
 
 Note that creating and dropping GPU objects in a loop gets steadily slower in
-**both** implementations — the cost is inside wgpu-native's resource
+**both** implementations -- the cost is inside wgpu-native's resource
 reclamation, not the bindings. The benchmark settles between repeats so it
 measures the Python layer rather than accumulated garbage.
+
+### What would push it further
+
+Per-call tuning is close to done: we are near the floor for *any* Python
+binding, and a hand-written C extension might buy 2x more at the cost of the
+"everything is generated" property. The remaining order of magnitude is
+structural -- stop making one Python call per GPU command:
+
+* **render bundles**, already generated, record once and replay with one call;
+* **`multi_draw_indirect`** (a wgpu-native extra, not yet wrapped);
+* **batched setters** that take an array of draw parameters and loop in C.
 
 ## What is left
 

@@ -11,11 +11,65 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from wgpu._api import overrides as _ov
-from wgpu._api.base import GPUObjectBase, Mixin
+from wgpu._api.base import GPUObjectBase, Mixin, new_object as _new_object
 from wgpu._api.types import ArrayLike, CanvasLike
 from wgpu._generated import apienums as enums
 from wgpu._generated import apiflags as flags
 from wgpu._generated import apistructs as structs
+
+# Bound once at import so the hot methods below are a single C call.
+from wgpu._native import ffi as _ffi, lib as _lib
+
+_NULL = _ffi.NULL
+_WHOLE64 = 18446744073709551615
+_E_error_filter = enums.TO_INT['error_filter']
+_E_index_format = enums.TO_INT['index_format']
+_c_wgpuBufferDestroy = _lib.wgpuBufferDestroy
+_c_wgpuBufferUnmap = _lib.wgpuBufferUnmap
+_c_wgpuCommandEncoderClearBuffer = _lib.wgpuCommandEncoderClearBuffer
+_c_wgpuCommandEncoderCopyBufferToBuffer = _lib.wgpuCommandEncoderCopyBufferToBuffer
+_c_wgpuCommandEncoderPopDebugGroup = _lib.wgpuCommandEncoderPopDebugGroup
+_c_wgpuCommandEncoderResolveQuerySet = _lib.wgpuCommandEncoderResolveQuerySet
+_c_wgpuComputePassEncoderDispatchWorkgroups = _lib.wgpuComputePassEncoderDispatchWorkgroups
+_c_wgpuComputePassEncoderDispatchWorkgroupsIndirect = _lib.wgpuComputePassEncoderDispatchWorkgroupsIndirect
+_c_wgpuComputePassEncoderEnd = _lib.wgpuComputePassEncoderEnd
+_c_wgpuComputePassEncoderPopDebugGroup = _lib.wgpuComputePassEncoderPopDebugGroup
+_c_wgpuComputePassEncoderSetBindGroup = _lib.wgpuComputePassEncoderSetBindGroup
+_c_wgpuComputePassEncoderSetImmediates = _lib.wgpuComputePassEncoderSetImmediates
+_c_wgpuComputePassEncoderSetPipeline = _lib.wgpuComputePassEncoderSetPipeline
+_c_wgpuComputePipelineGetBindGroupLayout = _lib.wgpuComputePipelineGetBindGroupLayout
+_c_wgpuDeviceDestroy = _lib.wgpuDeviceDestroy
+_c_wgpuDevicePushErrorScope = _lib.wgpuDevicePushErrorScope
+_c_wgpuQuerySetDestroy = _lib.wgpuQuerySetDestroy
+_c_wgpuRenderBundleEncoderDraw = _lib.wgpuRenderBundleEncoderDraw
+_c_wgpuRenderBundleEncoderDrawIndexed = _lib.wgpuRenderBundleEncoderDrawIndexed
+_c_wgpuRenderBundleEncoderDrawIndexedIndirect = _lib.wgpuRenderBundleEncoderDrawIndexedIndirect
+_c_wgpuRenderBundleEncoderDrawIndirect = _lib.wgpuRenderBundleEncoderDrawIndirect
+_c_wgpuRenderBundleEncoderPopDebugGroup = _lib.wgpuRenderBundleEncoderPopDebugGroup
+_c_wgpuRenderBundleEncoderSetBindGroup = _lib.wgpuRenderBundleEncoderSetBindGroup
+_c_wgpuRenderBundleEncoderSetImmediates = _lib.wgpuRenderBundleEncoderSetImmediates
+_c_wgpuRenderBundleEncoderSetIndexBuffer = _lib.wgpuRenderBundleEncoderSetIndexBuffer
+_c_wgpuRenderBundleEncoderSetPipeline = _lib.wgpuRenderBundleEncoderSetPipeline
+_c_wgpuRenderBundleEncoderSetVertexBuffer = _lib.wgpuRenderBundleEncoderSetVertexBuffer
+_c_wgpuRenderPassEncoderBeginOcclusionQuery = _lib.wgpuRenderPassEncoderBeginOcclusionQuery
+_c_wgpuRenderPassEncoderDraw = _lib.wgpuRenderPassEncoderDraw
+_c_wgpuRenderPassEncoderDrawIndexed = _lib.wgpuRenderPassEncoderDrawIndexed
+_c_wgpuRenderPassEncoderDrawIndexedIndirect = _lib.wgpuRenderPassEncoderDrawIndexedIndirect
+_c_wgpuRenderPassEncoderDrawIndirect = _lib.wgpuRenderPassEncoderDrawIndirect
+_c_wgpuRenderPassEncoderEnd = _lib.wgpuRenderPassEncoderEnd
+_c_wgpuRenderPassEncoderEndOcclusionQuery = _lib.wgpuRenderPassEncoderEndOcclusionQuery
+_c_wgpuRenderPassEncoderPopDebugGroup = _lib.wgpuRenderPassEncoderPopDebugGroup
+_c_wgpuRenderPassEncoderSetBindGroup = _lib.wgpuRenderPassEncoderSetBindGroup
+_c_wgpuRenderPassEncoderSetImmediates = _lib.wgpuRenderPassEncoderSetImmediates
+_c_wgpuRenderPassEncoderSetIndexBuffer = _lib.wgpuRenderPassEncoderSetIndexBuffer
+_c_wgpuRenderPassEncoderSetPipeline = _lib.wgpuRenderPassEncoderSetPipeline
+_c_wgpuRenderPassEncoderSetScissorRect = _lib.wgpuRenderPassEncoderSetScissorRect
+_c_wgpuRenderPassEncoderSetStencilReference = _lib.wgpuRenderPassEncoderSetStencilReference
+_c_wgpuRenderPassEncoderSetVertexBuffer = _lib.wgpuRenderPassEncoderSetVertexBuffer
+_c_wgpuRenderPassEncoderSetViewport = _lib.wgpuRenderPassEncoderSetViewport
+_c_wgpuRenderPipelineGetBindGroupLayout = _lib.wgpuRenderPipelineGetBindGroupLayout
+_c_wgpuTextureDestroy = _lib.wgpuTextureDestroy
+
 
 __all__ = [
     'GPUAdapter',
@@ -106,11 +160,11 @@ class GPUBuffer(GPUObjectBase):
 
     def unmap(self) -> None:
         """GPUBuffer.unmap -- see the WebGPU specification."""
-        return self._call('unmap')
+        return _c_wgpuBufferUnmap(self._handle)
 
     def destroy(self) -> None:
         """GPUBuffer.destroy -- see the WebGPU specification."""
-        return self._call('destroy')
+        return _c_wgpuBufferDestroy(self._handle)
 
     @property
     def size(self) -> int:
@@ -172,7 +226,7 @@ class GPUCommandEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUObjectBase):
 
     def copy_buffer_to_buffer(self, source: GPUBuffer, source_offset: int, destination: GPUBuffer, destination_offset: int, size: int | None = None) -> None:
         """GPUCommandEncoder.copyBufferToBuffer -- see the WebGPU specification."""
-        return self._call('copy_buffer_to_buffer', source, source_offset, destination, destination_offset, size)
+        return _c_wgpuCommandEncoderCopyBufferToBuffer(self._handle, source._handle, source_offset, destination._handle, destination_offset, (_WHOLE64 if size is None else size))
 
     def copy_buffer_to_texture(self, source: structs.TexelCopyBufferInfoStruct, destination: structs.TexelCopyTextureInfoStruct, copy_size: tuple[int, int, int] | structs.Extent3DStruct) -> None:
         """GPUCommandEncoder.copyBufferToTexture -- see the WebGPU specification."""
@@ -188,15 +242,19 @@ class GPUCommandEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUObjectBase):
 
     def clear_buffer(self, buffer: GPUBuffer, offset: int = 0, size: int | None = None) -> None:
         """GPUCommandEncoder.clearBuffer -- see the WebGPU specification."""
-        return self._call('clear_buffer', buffer, offset, size)
+        return _c_wgpuCommandEncoderClearBuffer(self._handle, buffer._handle, offset, (_WHOLE64 if size is None else size))
 
     def resolve_query_set(self, query_set: GPUQuerySet, first_query: int, query_count: int, destination: GPUBuffer, destination_offset: int) -> None:
         """GPUCommandEncoder.resolveQuerySet -- see the WebGPU specification."""
-        return self._call('resolve_query_set', query_set, first_query, query_count, destination, destination_offset)
+        return _c_wgpuCommandEncoderResolveQuerySet(self._handle, query_set._handle, first_query, query_count, destination._handle, destination_offset)
 
     def finish(self, *, label: str = "") -> GPUCommandBuffer:
         """GPUCommandEncoder.finish -- see the WebGPU specification."""
         return self._call_desc('finish', {'label': label})
+
+    def pop_debug_group(self) -> None:
+        """GPUCommandEncoder.popDebugGroup -- see the WebGPU specification."""
+        return _c_wgpuCommandEncoderPopDebugGroup(self._handle)
 
 
 
@@ -206,19 +264,27 @@ class GPUComputePassEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingC
 
     def set_pipeline(self, pipeline: GPUComputePipeline) -> None:
         """GPUComputePassEncoder.setPipeline -- see the WebGPU specification."""
-        return self._call('set_pipeline', pipeline)
+        return _c_wgpuComputePassEncoderSetPipeline(self._handle, pipeline._handle)
 
     def dispatch_workgroups(self, workgroup_count_x: int, workgroup_count_y: int = 1, workgroup_count_z: int = 1) -> None:
         """GPUComputePassEncoder.dispatchWorkgroups -- see the WebGPU specification."""
-        return self._call('dispatch_workgroups', workgroup_count_x, workgroup_count_y, workgroup_count_z)
+        return _c_wgpuComputePassEncoderDispatchWorkgroups(self._handle, workgroup_count_x, workgroup_count_y, workgroup_count_z)
 
     def dispatch_workgroups_indirect(self, indirect_buffer: GPUBuffer, indirect_offset: int) -> None:
         """GPUComputePassEncoder.dispatchWorkgroupsIndirect -- see the WebGPU specification."""
-        return self._call('dispatch_workgroups_indirect', indirect_buffer, indirect_offset)
+        return _c_wgpuComputePassEncoderDispatchWorkgroupsIndirect(self._handle, indirect_buffer._handle, indirect_offset)
 
     def end(self) -> None:
         """GPUComputePassEncoder.end -- see the WebGPU specification."""
-        return self._call('end')
+        return _c_wgpuComputePassEncoderEnd(self._handle)
+
+    def pop_debug_group(self) -> None:
+        """GPUComputePassEncoder.popDebugGroup -- see the WebGPU specification."""
+        return _c_wgpuComputePassEncoderPopDebugGroup(self._handle)
+
+    _c_set_bind_group = staticmethod(_c_wgpuComputePassEncoderSetBindGroup)
+
+    _c_set_immediates = staticmethod(_c_wgpuComputePassEncoderSetImmediates)
 
 
 
@@ -235,7 +301,9 @@ class GPUComputePipeline(GPUPipelineBase, GPUObjectBase):
     """GPUComputePipeline -- see the WebGPU specification."""
     _spec_name = 'compute_pipeline'
 
-    pass
+    def get_bind_group_layout(self, index: int) -> GPUBindGroupLayout:
+        """GPUComputePipeline.getBindGroupLayout -- see the WebGPU specification."""
+        return _new_object(GPUBindGroupLayout, _c_wgpuComputePipelineGetBindGroupLayout(self._handle, index), self)
 
 
 
@@ -245,7 +313,7 @@ class GPUDevice(GPUObjectBase):
 
     def destroy(self) -> None:
         """GPUDevice.destroy -- see the WebGPU specification."""
-        return self._call('destroy')
+        return _c_wgpuDeviceDestroy(self._handle)
 
     def create_buffer(self, *, label: str = "", size: int, usage: flags.BufferUsageFlags, mapped_at_creation: bool = False) -> GPUBuffer:
         """GPUDevice.createBuffer -- see the WebGPU specification."""
@@ -305,7 +373,7 @@ class GPUDevice(GPUObjectBase):
 
     def push_error_scope(self, filter: enums.ErrorFilterEnum) -> None:
         """GPUDevice.pushErrorScope -- see the WebGPU specification."""
-        return self._call('push_error_scope', filter)
+        return _c_wgpuDevicePushErrorScope(self._handle, _E_error_filter[filter])
 
     def pop_error_scope_async(self) -> GPUError:
         """GPUDevice.popErrorScope -- see the WebGPU specification."""
@@ -345,7 +413,7 @@ class GPUQuerySet(GPUObjectBase):
 
     def destroy(self) -> None:
         """GPUQuerySet.destroy -- see the WebGPU specification."""
-        return self._call('destroy')
+        return _c_wgpuQuerySetDestroy(self._handle)
 
     @property
     def type(self) -> enums.QueryTypeEnum:
@@ -432,6 +500,42 @@ class GPURenderBundleEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBinding
         """GPURenderBundleEncoder.finish -- see the WebGPU specification."""
         return self._call_desc('finish', {'label': label})
 
+    def pop_debug_group(self) -> None:
+        """GPURenderBundleEncoder.popDebugGroup -- see the WebGPU specification."""
+        return _c_wgpuRenderBundleEncoderPopDebugGroup(self._handle)
+
+    _c_set_bind_group = staticmethod(_c_wgpuRenderBundleEncoderSetBindGroup)
+
+    _c_set_immediates = staticmethod(_c_wgpuRenderBundleEncoderSetImmediates)
+
+    def set_pipeline(self, pipeline: GPURenderPipeline) -> None:
+        """GPURenderBundleEncoder.setPipeline -- see the WebGPU specification."""
+        return _c_wgpuRenderBundleEncoderSetPipeline(self._handle, pipeline._handle)
+
+    def set_index_buffer(self, buffer: GPUBuffer, index_format: enums.IndexFormatEnum, offset: int = 0, size: int | None = None) -> None:
+        """GPURenderBundleEncoder.setIndexBuffer -- see the WebGPU specification."""
+        return _c_wgpuRenderBundleEncoderSetIndexBuffer(self._handle, buffer._handle, _E_index_format[index_format], offset, (_WHOLE64 if size is None else size))
+
+    def set_vertex_buffer(self, slot: int, buffer: GPUBuffer, offset: int = 0, size: int | None = None) -> None:
+        """GPURenderBundleEncoder.setVertexBuffer -- see the WebGPU specification."""
+        return _c_wgpuRenderBundleEncoderSetVertexBuffer(self._handle, slot, (buffer._handle if buffer is not None else _NULL), offset, (_WHOLE64 if size is None else size))
+
+    def draw(self, vertex_count: int, instance_count: int = 1, first_vertex: int = 0, first_instance: int = 0) -> None:
+        """GPURenderBundleEncoder.draw -- see the WebGPU specification."""
+        return _c_wgpuRenderBundleEncoderDraw(self._handle, vertex_count, instance_count, first_vertex, first_instance)
+
+    def draw_indexed(self, index_count: int, instance_count: int = 1, first_index: int = 0, base_vertex: int = 0, first_instance: int = 0) -> None:
+        """GPURenderBundleEncoder.drawIndexed -- see the WebGPU specification."""
+        return _c_wgpuRenderBundleEncoderDrawIndexed(self._handle, index_count, instance_count, first_index, base_vertex, first_instance)
+
+    def draw_indirect(self, indirect_buffer: GPUBuffer, indirect_offset: int) -> None:
+        """GPURenderBundleEncoder.drawIndirect -- see the WebGPU specification."""
+        return _c_wgpuRenderBundleEncoderDrawIndirect(self._handle, indirect_buffer._handle, indirect_offset)
+
+    def draw_indexed_indirect(self, indirect_buffer: GPUBuffer, indirect_offset: int) -> None:
+        """GPURenderBundleEncoder.drawIndexedIndirect -- see the WebGPU specification."""
+        return _c_wgpuRenderBundleEncoderDrawIndexedIndirect(self._handle, indirect_buffer._handle, indirect_offset)
+
 
 
 class GPURenderPassEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCommandsMixin, GPURenderCommandsMixin, GPUObjectBase):
@@ -440,11 +544,11 @@ class GPURenderPassEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCo
 
     def set_viewport(self, x: float, y: float, width: float, height: float, min_depth: float, max_depth: float) -> None:
         """GPURenderPassEncoder.setViewport -- see the WebGPU specification."""
-        return self._call('set_viewport', x, y, width, height, min_depth, max_depth)
+        return _c_wgpuRenderPassEncoderSetViewport(self._handle, x, y, width, height, min_depth, max_depth)
 
     def set_scissor_rect(self, x: int, y: int, width: int, height: int) -> None:
         """GPURenderPassEncoder.setScissorRect -- see the WebGPU specification."""
-        return self._call('set_scissor_rect', x, y, width, height)
+        return _c_wgpuRenderPassEncoderSetScissorRect(self._handle, x, y, width, height)
 
     def set_blend_constant(self, color: tuple[float, float, float, float] | structs.ColorStruct) -> None:
         """GPURenderPassEncoder.setBlendConstant -- see the WebGPU specification."""
@@ -452,15 +556,15 @@ class GPURenderPassEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCo
 
     def set_stencil_reference(self, reference: int) -> None:
         """GPURenderPassEncoder.setStencilReference -- see the WebGPU specification."""
-        return self._call('set_stencil_reference', reference)
+        return _c_wgpuRenderPassEncoderSetStencilReference(self._handle, reference)
 
     def begin_occlusion_query(self, query_index: int) -> None:
         """GPURenderPassEncoder.beginOcclusionQuery -- see the WebGPU specification."""
-        return self._call('begin_occlusion_query', query_index)
+        return _c_wgpuRenderPassEncoderBeginOcclusionQuery(self._handle, query_index)
 
     def end_occlusion_query(self) -> None:
         """GPURenderPassEncoder.endOcclusionQuery -- see the WebGPU specification."""
-        return self._call('end_occlusion_query')
+        return _c_wgpuRenderPassEncoderEndOcclusionQuery(self._handle)
 
     def execute_bundles(self, bundles: Sequence[GPURenderBundle]) -> None:
         """GPURenderPassEncoder.executeBundles -- see the WebGPU specification."""
@@ -468,7 +572,43 @@ class GPURenderPassEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCo
 
     def end(self) -> None:
         """GPURenderPassEncoder.end -- see the WebGPU specification."""
-        return self._call('end')
+        return _c_wgpuRenderPassEncoderEnd(self._handle)
+
+    def pop_debug_group(self) -> None:
+        """GPURenderPassEncoder.popDebugGroup -- see the WebGPU specification."""
+        return _c_wgpuRenderPassEncoderPopDebugGroup(self._handle)
+
+    _c_set_bind_group = staticmethod(_c_wgpuRenderPassEncoderSetBindGroup)
+
+    _c_set_immediates = staticmethod(_c_wgpuRenderPassEncoderSetImmediates)
+
+    def set_pipeline(self, pipeline: GPURenderPipeline) -> None:
+        """GPURenderPassEncoder.setPipeline -- see the WebGPU specification."""
+        return _c_wgpuRenderPassEncoderSetPipeline(self._handle, pipeline._handle)
+
+    def set_index_buffer(self, buffer: GPUBuffer, index_format: enums.IndexFormatEnum, offset: int = 0, size: int | None = None) -> None:
+        """GPURenderPassEncoder.setIndexBuffer -- see the WebGPU specification."""
+        return _c_wgpuRenderPassEncoderSetIndexBuffer(self._handle, buffer._handle, _E_index_format[index_format], offset, (_WHOLE64 if size is None else size))
+
+    def set_vertex_buffer(self, slot: int, buffer: GPUBuffer, offset: int = 0, size: int | None = None) -> None:
+        """GPURenderPassEncoder.setVertexBuffer -- see the WebGPU specification."""
+        return _c_wgpuRenderPassEncoderSetVertexBuffer(self._handle, slot, (buffer._handle if buffer is not None else _NULL), offset, (_WHOLE64 if size is None else size))
+
+    def draw(self, vertex_count: int, instance_count: int = 1, first_vertex: int = 0, first_instance: int = 0) -> None:
+        """GPURenderPassEncoder.draw -- see the WebGPU specification."""
+        return _c_wgpuRenderPassEncoderDraw(self._handle, vertex_count, instance_count, first_vertex, first_instance)
+
+    def draw_indexed(self, index_count: int, instance_count: int = 1, first_index: int = 0, base_vertex: int = 0, first_instance: int = 0) -> None:
+        """GPURenderPassEncoder.drawIndexed -- see the WebGPU specification."""
+        return _c_wgpuRenderPassEncoderDrawIndexed(self._handle, index_count, instance_count, first_index, base_vertex, first_instance)
+
+    def draw_indirect(self, indirect_buffer: GPUBuffer, indirect_offset: int) -> None:
+        """GPURenderPassEncoder.drawIndirect -- see the WebGPU specification."""
+        return _c_wgpuRenderPassEncoderDrawIndirect(self._handle, indirect_buffer._handle, indirect_offset)
+
+    def draw_indexed_indirect(self, indirect_buffer: GPUBuffer, indirect_offset: int) -> None:
+        """GPURenderPassEncoder.drawIndexedIndirect -- see the WebGPU specification."""
+        return _c_wgpuRenderPassEncoderDrawIndexedIndirect(self._handle, indirect_buffer._handle, indirect_offset)
 
 
 
@@ -476,7 +616,9 @@ class GPURenderPipeline(GPUPipelineBase, GPUObjectBase):
     """GPURenderPipeline -- see the WebGPU specification."""
     _spec_name = 'render_pipeline'
 
-    pass
+    def get_bind_group_layout(self, index: int) -> GPUBindGroupLayout:
+        """GPURenderPipeline.getBindGroupLayout -- see the WebGPU specification."""
+        return _new_object(GPUBindGroupLayout, _c_wgpuRenderPipelineGetBindGroupLayout(self._handle, index), self)
 
 
 
@@ -514,7 +656,7 @@ class GPUTexture(GPUObjectBase):
 
     def destroy(self) -> None:
         """GPUTexture.destroy -- see the WebGPU specification."""
-        return self._call('destroy')
+        return _c_wgpuTextureDestroy(self._handle)
 
     @property
     def width(self) -> int:
