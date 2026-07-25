@@ -78,7 +78,9 @@ class StructBuilder:
             setattr(ptr, field, value if value is not None else self.ffi.NULL)
         elif mem.kind == "struct":
             self._set_struct(ptr, mem, value, keep)
-        elif mem.kind in ("callback", "c_void", "out_string"):
+        elif mem.kind == "callback":
+            self._set_callback(ptr, mem, value, keep)
+        elif mem.kind in ("c_void", "out_string"):
             return  # not built from plain input mappings
         else:  # pragma: no cover
             raise TypeError(f"cannot marshal member kind {mem.kind!r} ({mem.c})")
@@ -102,6 +104,25 @@ class StructBuilder:
         keep.append(data)
         view.data = data
         view.length = len(value.encode("utf-8"))
+
+    def _set_callback(self, ptr, mem, value, keep: list):
+        """Fill an embedded ``*CallbackInfo`` struct.
+
+        ``value`` is either a cffi callback, or a mapping of the info struct's
+        own fields (e.g. ``{"callback": cb, "mode": ...}``) for the infos that
+        also carry a callback mode.
+        """
+        if value is None:
+            return
+        info = getattr(ptr, mem.c)
+        fields = {f[0] for f in self.ffi.typeof(info).fields}
+        if not isinstance(value, dict):
+            value = {"callback": value}
+        for name, item in value.items():
+            if name not in fields:
+                raise TypeError(f"{mem.c} has no field {name!r}")
+            setattr(info, name, item)
+            keep.append(item)
 
     def _set_struct(self, ptr, mem, value, keep: list):
         child = self._build_into_new(mem.ref, value or {}, keep)
