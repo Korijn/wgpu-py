@@ -14,7 +14,7 @@ class GPUObjectBase:
 
     _spec_name: str = ""
 
-    __slots__ = ("_handle", "_pump", "_parent", "__weakref__")
+    __slots__ = ("__weakref__", "_handle", "_parent", "_pump")
 
     def __init__(self, handle, pump=None, parent=None):
         self._handle = handle

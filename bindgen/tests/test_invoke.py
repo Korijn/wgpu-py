@@ -28,9 +28,7 @@ def api():
 
 def test_marshal_struct_arg_builds_pointer(api):
     method = api._methods[("device", "create_buffer")]
-    c_args, _keep = api.invoker.marshal_args(
-        method, [{"label": "vb", "size": 128}]
-    )
+    c_args, _keep = api.invoker.marshal_args(method, [{"label": "vb", "size": 128}])
     assert len(c_args) == 1
     desc = c_args[0]
     assert desc.size == 128

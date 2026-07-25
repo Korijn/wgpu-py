@@ -2,7 +2,6 @@
 
 import importlib.util
 import sys
-from pathlib import Path
 
 import pytest
 
@@ -33,10 +32,9 @@ def builder():
     from wgpu._runtime.structs import StructBuilder
 
     structs = _load("structs").STRUCTS
-    enums = _load("enums")
     flags = _load("flags")
     constants = _load("constants")
-    return StructBuilder(native.ffi, structs, enums, flags, constants), native.ffi, flags
+    return StructBuilder(native.ffi, structs, constants), native.ffi, flags
 
 
 def test_scalar_string_and_flags(builder):
@@ -57,7 +55,7 @@ def test_scalar_string_and_flags(builder):
 
 
 def test_default_applied_when_omitted(builder):
-    b, ffi, _flags = builder
+    b, _ffi, _flags = builder
     # bind_group_entry.size defaults to constant.whole_size (uint64 max).
     ptr, _keep = b.new("bind_group_entry", {"binding": 0, "offset": 0})
     assert ptr.size == (1 << 64) - 1

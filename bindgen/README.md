@@ -25,6 +25,14 @@ wgpu-native/ (submodule, pinned)
    wgpu._native._wgpu   (compiled extension, ~228 wgpu* functions)
 ```
 
+### Layering rule
+
+`bindgen/` is **development-only** — it is not part of the wheel. Nothing under
+`wgpu/` may import it, so everything the runtime needs (enum classes by spec
+name, release functions, resolved defaults) is *generated into* `wgpu/_generated/`.
+Two tests enforce this boundary, one statically and one by running the real call
+path with `bindgen` made unimportable.
+
 ### Why this setup
 
 * **cffi API (out-of-line) mode**, not ABI mode. The real headers are compiled

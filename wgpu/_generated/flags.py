@@ -52,3 +52,10 @@ class TextureUsage(enum.IntFlag):
     render_attachment = 16
     transient_attachment = 32
 
+BY_SPEC_NAME = {
+    'buffer_usage': BufferUsage,
+    'color_write_mask': ColorWriteMask,
+    'map_mode': MapMode,
+    'shader_stage': ShaderStage,
+    'texture_usage': TextureUsage,
+}

@@ -26,16 +26,90 @@ def static_lib_path(profile: str = "release") -> Path:
     return NATIVE_ROOT / "target" / profile / name
 
 
-def native_static_libs() -> list[str]:
-    """System libraries Rust's staticlib must be linked against, per platform.
+# Fallbacks used only when cargo cannot be queried (e.g. building from an
+# sdist without a Rust toolchain). The authoritative list comes from rustc.
+_FALLBACK_STATIC_LIBS = {
+    "linux": ["dl", "gcc_s", "util", "rt", "pthread", "m", "c"],
+    "darwin": ["c", "m"],
+    "win32": ["ws2_32", "userenv", "bcrypt", "ntdll", "advapi32", "kernel32"],
+}
 
-    These come from ``rustc --print native-static-libs`` for wgpu-native and are
-    required when statically linking the archive into the CPython extension.
+
+#: Apple frameworks wgpu-native needs, used only if rustc cannot be queried.
+_FALLBACK_FRAMEWORKS = ("Metal", "QuartzCore", "CoreFoundation", "Foundation")
+
+
+def native_link_spec(profile: str = "release") -> tuple[list[str], list[str]]:
+    """Return ``(libraries, extra_link_args)`` for linking the Rust staticlib.
+
+    Asks rustc directly (``--print native-static-libs``) rather than hardcoding
+    per-platform lists, so a new target -- or an upstream dependency change --
+    needs no edits here. Apple ``-framework X`` pairs are kept as link args
+    (passing ``X`` as a plain library would emit a bogus ``-lX``). Falls back to
+    known-good lists when cargo is unavailable (e.g. building from an sdist).
     """
-    if sys.platform.startswith("linux"):
-        return ["dl", "gcc_s", "util", "rt", "pthread", "m", "c"]
+    spec = _query_native_link_spec(profile)
+    if spec is not None:
+        return spec
+    libs: list[str] = []
+    for key, value in _FALLBACK_STATIC_LIBS.items():
+        if sys.platform.startswith(key):
+            libs = list(value)
+            break
+    args: list[str] = []
     if sys.platform.startswith("darwin"):
-        # wgpu-native links these system frameworks/libs on macOS.
-        return ["System", "c", "m"]
-    # Windows links these via the MSVC toolchain; handled with extra_link_args.
-    return []
+        for framework in _FALLBACK_FRAMEWORKS:
+            args += ["-framework", framework]
+    return libs, args
+
+
+def native_static_libs(profile: str = "release") -> list[str]:
+    """Just the plain libraries; see :func:`native_link_spec`."""
+    return native_link_spec(profile)[0]
+
+
+def _query_native_link_spec(profile: str) -> tuple[list[str], list[str]] | None:
+    """Parse ``native-static-libs`` out of a rustc build of wgpu-native."""
+    import re
+    import subprocess
+
+    cmd = ["cargo", "rustc", "--lib", "--quiet"]
+    if profile == "release":
+        cmd.append("--release")
+    cmd += ["--", "--print", "native-static-libs"]
+    try:
+        proc = subprocess.run(
+            cmd, cwd=NATIVE_ROOT, capture_output=True, text=True, timeout=1800
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    match = re.search(r"native-static-libs:\s*(.+)", proc.stderr)
+    if not match:
+        return None
+
+    libs: list[str] = []
+    args: list[str] = []
+    tokens = match.group(1).split()
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        index += 1
+        if token == "-framework" and index < len(tokens):
+            framework = tokens[index]
+            index += 1
+            if ["-framework", framework] not in [
+                args[i : i + 2] for i in range(0, len(args), 2)
+            ]:
+                args += ["-framework", framework]
+            continue
+        if token.startswith("-l"):
+            token = token[2:].split("=")[-1]  # -lstatic=foo -> foo
+        elif token.endswith(".lib"):
+            token = token[: -len(".lib")]
+        elif token.startswith("-"):
+            continue  # some other linker flag we do not need to forward
+        if token and token not in libs:
+            libs.append(token)
+    if not libs and not args:
+        return None
+    return libs, args

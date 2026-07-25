@@ -44,6 +44,8 @@ class Method:
 @dataclass(frozen=True)
 class ObjectType:
     c_name: str
+    release_func: str = ''   # e.g. wgpuDeviceRelease
+    add_ref_func: str = ''   # e.g. wgpuDeviceAddRef
     methods: tuple = field(default_factory=tuple)
 
 
@@ -51,6 +53,8 @@ OBJECTS: dict[str, ObjectType] = {}
 
 OBJECTS['adapter'] = ObjectType(
     c_name='WGPUAdapter',
+    release_func='wgpuAdapterRelease',
+    add_ref_func='wgpuAdapterAddRef',
     methods=(
         Method(
             py='get_limits', c_func='wgpuAdapterGetLimits',
@@ -102,6 +106,8 @@ OBJECTS['adapter'] = ObjectType(
 
 OBJECTS['bind_group'] = ObjectType(
     c_name='WGPUBindGroup',
+    release_func='wgpuBindGroupRelease',
+    add_ref_func='wgpuBindGroupAddRef',
     methods=(
         Method(
             py='set_label', c_func='wgpuBindGroupSetLabel',
@@ -117,6 +123,8 @@ OBJECTS['bind_group'] = ObjectType(
 
 OBJECTS['bind_group_layout'] = ObjectType(
     c_name='WGPUBindGroupLayout',
+    release_func='wgpuBindGroupLayoutRelease',
+    add_ref_func='wgpuBindGroupLayoutAddRef',
     methods=(
         Method(
             py='set_label', c_func='wgpuBindGroupLayoutSetLabel',
@@ -132,6 +140,8 @@ OBJECTS['bind_group_layout'] = ObjectType(
 
 OBJECTS['buffer'] = ObjectType(
     c_name='WGPUBuffer',
+    release_func='wgpuBufferRelease',
+    add_ref_func='wgpuBufferAddRef',
     methods=(
         Method(
             py='map_async', c_func='wgpuBufferMapAsync',
@@ -245,6 +255,8 @@ OBJECTS['buffer'] = ObjectType(
 
 OBJECTS['command_buffer'] = ObjectType(
     c_name='WGPUCommandBuffer',
+    release_func='wgpuCommandBufferRelease',
+    add_ref_func='wgpuCommandBufferAddRef',
     methods=(
         Method(
             py='set_label', c_func='wgpuCommandBufferSetLabel',
@@ -260,6 +272,8 @@ OBJECTS['command_buffer'] = ObjectType(
 
 OBJECTS['command_encoder'] = ObjectType(
     c_name='WGPUCommandEncoder',
+    release_func='wgpuCommandEncoderRelease',
+    add_ref_func='wgpuCommandEncoderAddRef',
     methods=(
         Method(
             py='finish', c_func='wgpuCommandEncoderFinish',
@@ -409,6 +423,8 @@ OBJECTS['command_encoder'] = ObjectType(
 
 OBJECTS['compute_pass_encoder'] = ObjectType(
     c_name='WGPUComputePassEncoder',
+    release_func='wgpuComputePassEncoderRelease',
+    add_ref_func='wgpuComputePassEncoderAddRef',
     methods=(
         Method(
             py='insert_debug_marker', c_func='wgpuComputePassEncoderInsertDebugMarker',
@@ -512,6 +528,8 @@ OBJECTS['compute_pass_encoder'] = ObjectType(
 
 OBJECTS['compute_pipeline'] = ObjectType(
     c_name='WGPUComputePipeline',
+    release_func='wgpuComputePipelineRelease',
+    add_ref_func='wgpuComputePipelineAddRef',
     methods=(
         Method(
             py='get_bind_group_layout', c_func='wgpuComputePipelineGetBindGroupLayout',
@@ -536,6 +554,8 @@ OBJECTS['compute_pipeline'] = ObjectType(
 
 OBJECTS['device'] = ObjectType(
     c_name='WGPUDevice',
+    release_func='wgpuDeviceRelease',
+    add_ref_func='wgpuDeviceAddRef',
     methods=(
         Method(
             py='create_bind_group', c_func='wgpuDeviceCreateBindGroup',
@@ -758,6 +778,8 @@ OBJECTS['device'] = ObjectType(
 
 OBJECTS['external_texture'] = ObjectType(
     c_name='WGPUExternalTexture',
+    release_func='wgpuExternalTextureRelease',
+    add_ref_func='wgpuExternalTextureAddRef',
     methods=(
         Method(
             py='set_label', c_func='wgpuExternalTextureSetLabel',
@@ -773,6 +795,8 @@ OBJECTS['external_texture'] = ObjectType(
 
 OBJECTS['instance'] = ObjectType(
     c_name='WGPUInstance',
+    release_func='wgpuInstanceRelease',
+    add_ref_func='wgpuInstanceAddRef',
     methods=(
         Method(
             py='create_surface', c_func='wgpuInstanceCreateSurface',
@@ -835,6 +859,8 @@ OBJECTS['instance'] = ObjectType(
 
 OBJECTS['pipeline_layout'] = ObjectType(
     c_name='WGPUPipelineLayout',
+    release_func='wgpuPipelineLayoutRelease',
+    add_ref_func='wgpuPipelineLayoutAddRef',
     methods=(
         Method(
             py='set_label', c_func='wgpuPipelineLayoutSetLabel',
@@ -850,6 +876,8 @@ OBJECTS['pipeline_layout'] = ObjectType(
 
 OBJECTS['query_set'] = ObjectType(
     c_name='WGPUQuerySet',
+    release_func='wgpuQuerySetRelease',
+    add_ref_func='wgpuQuerySetAddRef',
     methods=(
         Method(
             py='set_label', c_func='wgpuQuerySetSetLabel',
@@ -892,6 +920,8 @@ OBJECTS['query_set'] = ObjectType(
 
 OBJECTS['queue'] = ObjectType(
     c_name='WGPUQueue',
+    release_func='wgpuQueueRelease',
+    add_ref_func='wgpuQueueAddRef',
     methods=(
         Method(
             py='submit', c_func='wgpuQueueSubmit',
@@ -950,6 +980,8 @@ OBJECTS['queue'] = ObjectType(
 
 OBJECTS['render_bundle'] = ObjectType(
     c_name='WGPURenderBundle',
+    release_func='wgpuRenderBundleRelease',
+    add_ref_func='wgpuRenderBundleAddRef',
     methods=(
         Method(
             py='set_label', c_func='wgpuRenderBundleSetLabel',
@@ -965,6 +997,8 @@ OBJECTS['render_bundle'] = ObjectType(
 
 OBJECTS['render_bundle_encoder'] = ObjectType(
     c_name='WGPURenderBundleEncoder',
+    release_func='wgpuRenderBundleEncoderRelease',
+    add_ref_func='wgpuRenderBundleEncoderAddRef',
     methods=(
         Method(
             py='set_pipeline', c_func='wgpuRenderBundleEncoderSetPipeline',
@@ -1116,6 +1150,8 @@ OBJECTS['render_bundle_encoder'] = ObjectType(
 
 OBJECTS['render_pass_encoder'] = ObjectType(
     c_name='WGPURenderPassEncoder',
+    release_func='wgpuRenderPassEncoderRelease',
+    add_ref_func='wgpuRenderPassEncoderAddRef',
     methods=(
         Method(
             py='set_pipeline', c_func='wgpuRenderPassEncoderSetPipeline',
@@ -1338,6 +1374,8 @@ OBJECTS['render_pass_encoder'] = ObjectType(
 
 OBJECTS['render_pipeline'] = ObjectType(
     c_name='WGPURenderPipeline',
+    release_func='wgpuRenderPipelineRelease',
+    add_ref_func='wgpuRenderPipelineAddRef',
     methods=(
         Method(
             py='get_bind_group_layout', c_func='wgpuRenderPipelineGetBindGroupLayout',
@@ -1362,6 +1400,8 @@ OBJECTS['render_pipeline'] = ObjectType(
 
 OBJECTS['sampler'] = ObjectType(
     c_name='WGPUSampler',
+    release_func='wgpuSamplerRelease',
+    add_ref_func='wgpuSamplerAddRef',
     methods=(
         Method(
             py='set_label', c_func='wgpuSamplerSetLabel',
@@ -1377,6 +1417,8 @@ OBJECTS['sampler'] = ObjectType(
 
 OBJECTS['shader_module'] = ObjectType(
     c_name='WGPUShaderModule',
+    release_func='wgpuShaderModuleRelease',
+    add_ref_func='wgpuShaderModuleAddRef',
     methods=(
         Method(
             py='get_compilation_info', c_func='wgpuShaderModuleGetCompilationInfo',
@@ -1401,6 +1443,8 @@ OBJECTS['shader_module'] = ObjectType(
 
 OBJECTS['surface'] = ObjectType(
     c_name='WGPUSurface',
+    release_func='wgpuSurfaceRelease',
+    add_ref_func='wgpuSurfaceAddRef',
     methods=(
         Method(
             py='configure', c_func='wgpuSurfaceConfigure',
@@ -1462,6 +1506,8 @@ OBJECTS['surface'] = ObjectType(
 
 OBJECTS['texture'] = ObjectType(
     c_name='WGPUTexture',
+    release_func='wgpuTextureRelease',
+    add_ref_func='wgpuTextureAddRef',
     methods=(
         Method(
             py='create_view', c_func='wgpuTextureCreateView',
@@ -1576,6 +1622,8 @@ OBJECTS['texture'] = ObjectType(
 
 OBJECTS['texture_view'] = ObjectType(
     c_name='WGPUTextureView',
+    release_func='wgpuTextureViewRelease',
+    add_ref_func='wgpuTextureViewAddRef',
     methods=(
         Method(
             py='set_label', c_func='wgpuTextureViewSetLabel',

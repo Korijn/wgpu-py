@@ -22,6 +22,7 @@ __all__ = ["enum_value", "get_default_device", "request_adapter_sync"]
 
 # ---- classic enum/flag spellings -------------------------------------------
 
+
 def _norm(name: str) -> str:
     """``"clamp-to-edge"``, ``"CLAMP_TO_EDGE"`` and ``clamp_to_edge`` all match."""
     return name.replace("-", "").replace("_", "").lower()
@@ -52,6 +53,7 @@ def enum_value(cls, value):
 
 
 # ---- wrappers ---------------------------------------------------------------
+
 
 class _Wrapper:
     """Base for the classic-API wrappers around generated objects."""
@@ -102,10 +104,13 @@ class GPUBuffer(_Wrapper):
         return self._inner.get_mapped_range(offset, size)
 
     def write_mapped(self, data, offset: int | None = None) -> None:
-        moffset, msize = getattr(self, "_mapped", (0, self._size))
+        moffset, _msize = getattr(self, "_mapped", (0, self._size))
         offset = moffset if offset is None else offset
-        view = self._inner.get_mapped_range(offset, len(data))
-        view[:] = bytes(data)
+        # cast("B") so nbytes is correct for any buffer (numpy arrays, etc.);
+        # len() would give the item count, not the byte count.
+        src = memoryview(data).cast("B")
+        view = self._inner.get_mapped_range(offset, src.nbytes)
+        view[:] = src
 
     def unmap(self) -> None:
         self._inner.unmap()
@@ -125,15 +130,15 @@ class GPUQueue(_Wrapper):
         )
 
     def submit(self, command_buffers):
-        self._inner.submit([cb._inner if isinstance(cb, _Wrapper) else cb for cb in command_buffers])
+        self._inner.submit(
+            [cb._inner if isinstance(cb, _Wrapper) else cb for cb in command_buffers]
+        )
 
     def read_buffer(self, buffer, buffer_offset: int = 0, size: int | None = None):
         """Copy buffer contents to the CPU and return them as a memoryview."""
         size = buffer.size - buffer_offset if size is None else size
-        BU = flags.BufferUsage
-        staging = self._device.create_buffer(
-            size=size, usage=BU.copy_dst | BU.map_read
-        )
+        usage = flags.BufferUsage.copy_dst | flags.BufferUsage.map_read
+        staging = self._device.create_buffer(size=size, usage=usage)
         encoder = self._device.create_command_encoder()
         encoder.copy_buffer_to_buffer(buffer, buffer_offset, staging, 0, size)
         self.submit([encoder.finish()])
@@ -145,7 +150,9 @@ class GPUQueue(_Wrapper):
 
 
 class GPUCommandEncoder(_Wrapper):
-    def copy_buffer_to_buffer(self, source, source_offset, destination, destination_offset, size):
+    def copy_buffer_to_buffer(
+        self, source, source_offset, destination, destination_offset, size
+    ):
         self._inner.copy_buffer_to_buffer(
             source._inner, source_offset, destination._inner, destination_offset, size
         )
@@ -172,7 +179,9 @@ class GPUDevice(_Wrapper):
         api = get_api()
         api.lib.wgpuDevicePoll(self._inner._handle, bool(wait), api.ffi.NULL)
 
-    def create_buffer(self, *, label: str = "", size: int, usage, mapped_at_creation: bool = False):
+    def create_buffer(
+        self, *, label: str = "", size: int, usage, mapped_at_creation: bool = False
+    ):
         usage = enum_value(flags.BufferUsage, usage)
         inner = self._inner.create_buffer(
             {
@@ -207,11 +216,15 @@ class GPUAdapter(_Wrapper):
         return GPUDevice(self._inner.request_device({"label": label}).wait())
 
 
-def request_adapter_sync(*, power_preference=None, force_fallback_adapter=False, **_ignored):
+def request_adapter_sync(
+    *, power_preference=None, force_fallback_adapter=False, **_ignored
+):
     """Classic entrypoint: synchronously request an adapter."""
     options: dict = {"force_fallback_adapter": bool(force_fallback_adapter)}
     if power_preference is not None:
-        options["power_preference"] = enum_value(enums.PowerPreference, power_preference)
+        options["power_preference"] = enum_value(
+            enums.PowerPreference, power_preference
+        )
     instance = get_api().create_instance()
     adapter = instance.request_adapter(options).wait()
     if adapter is None or not adapter._handle:

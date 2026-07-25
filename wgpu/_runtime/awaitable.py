@@ -9,6 +9,12 @@ ways:
 * ``await fut``    -- yields to whatever event loop is running (asyncio/trio).
 * ``fut.is_ready`` / ``fut.result`` -- manual polling.
 
+Both driven paths currently spin on the pump (``wgpuInstanceProcessEvents``).
+wgpu-native also offers ``wgpuInstanceWaitAny``, which blocks inside C until a
+future resolves; adopting it for :meth:`WgpuFuture.wait` would remove the spin,
+but needs the ``WGPUFuture`` handle that the async call returns to be captured
+first. Left as a follow-up so the current behaviour stays simple and correct.
+
 The only loop-specific bit is *how* to yield during ``await``; asyncio and trio
 have incompatible checkpoints, so we detect the running loop once per await via
 ``sniffio`` (a neutral detector, imported lazily so sync users never pay for
@@ -39,11 +45,11 @@ def configure_async_backend(backend) -> None:
     elif backend == "asyncio":
         import asyncio
 
-        _async_checkpoint = lambda: asyncio.sleep(0)  # noqa: E731
+        _async_checkpoint = lambda: asyncio.sleep(0)
     elif backend == "trio":
         import trio
 
-        _async_checkpoint = lambda: trio.sleep(0)  # noqa: E731
+        _async_checkpoint = lambda: trio.sleep(0)
     else:
         raise ValueError(f"unknown async backend {backend!r}")
 
@@ -63,7 +69,9 @@ def _detect_checkpoint():
         import trio
 
         return lambda: trio.sleep(0)
-    raise RuntimeError(f"unsupported async library {lib!r}; use configure_async_backend")
+    raise RuntimeError(
+        f"unsupported async library {lib!r}; use configure_async_backend"
+    )
 
 
 class WgpuFuture:
@@ -99,7 +107,10 @@ class WgpuFuture:
     # -- sync consumption --------------------------------------------------
 
     def wait(self):
-        """Block the current thread until the operation completes."""
+        """Block the current thread until the operation completes.
+
+        Spins on the pump; see the module docstring on ``wgpuInstanceWaitAny``.
+        """
         while not self.is_ready:
             self._pump()
         return self.result()

@@ -13,14 +13,15 @@ no per-call header parsing as in cffi's ABI mode.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from . import paths
 from .headers import build_cdef
 
-#: Dotted name of the compiled extension module.
-MODULE_NAME = "wgpu._native._wgpu"
+#: Name of the compiled extension module. It is built directly into
+#: :data:`NATIVE_DIR` (``wgpu/_native/``), where ``wgpu/_native/__init__.py``
+#: re-exports its ``ffi`` and ``lib``.
+MODULE_NAME = "_wgpu"
 
 
 def make_ffi(profile: str = "release", module_name: str = MODULE_NAME):
@@ -37,20 +38,16 @@ def make_ffi(profile: str = "release", module_name: str = MODULE_NAME):
             f"    cargo build --release --lib   # in the wgpu-native submodule"
         )
 
-    extra_link_args: list[str] = []
-    frameworks: list[str] = []
-    if sys.platform.startswith("darwin"):
-        # wgpu-native's Metal backend needs these Apple frameworks at link time.
-        for fw in ("Metal", "QuartzCore", "CoreFoundation", "Foundation"):
-            frameworks += ["-framework", fw]
-        extra_link_args += frameworks
+    # Both come from rustc, so new targets need no changes here (on macOS the
+    # link args carry the "-framework Metal" style pairs).
+    libraries, extra_link_args = paths.native_link_spec(profile)
 
     ffi.set_source(
         module_name,
         '#include "wgpu.h"\n',
         include_dirs=list(paths.INCLUDE_DIRS),
         extra_objects=[str(static_lib)],
-        libraries=paths.native_static_libs(),
+        libraries=libraries,
         extra_link_args=extra_link_args,
     )
     return ffi
@@ -79,7 +76,9 @@ def load_compiled(build_dir: str | Path, stem: str = "_wgpu"):
     import importlib.util
 
     build_dir = Path(build_dir)
-    matches = sorted(build_dir.glob(f"{stem}.*.so")) + sorted(build_dir.glob(f"{stem}.pyd"))
+    matches = sorted(build_dir.glob(f"{stem}.*.so")) + sorted(
+        build_dir.glob(f"{stem}.pyd")
+    )
     if not matches:
         raise FileNotFoundError(f"no compiled {stem} extension in {build_dir}")
     spec = importlib.util.spec_from_file_location(stem, matches[0])

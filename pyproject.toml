@@ -11,6 +11,7 @@ keywords = ["webgpu", "wgpu", "vulkan", "metal", "DX12", "opengl"]
 requires-python = ">= 3.11"
 dependencies = [
     "cffi>=1.15.0",
+    "sniffio>=1.3",                                  # detect asyncio vs trio when awaiting; see wgpu/_runtime/awaitable.py
     "rubicon-objc>=0.4.1; sys_platform == 'darwin'",
     "rendercanvas >=2.7",                            # Temporarily depend on rendercanvas because we re-aligned apis. Remove in a few months
 ]
@@ -89,6 +90,12 @@ ignore = [
     "B007",   # Loop control variable `x` not used within loop body
     "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Generated from webgpu.json; member names deliberately mirror the upstream
+# spec spelling (e.g. RGBA8_unorm, surface_source_XCB_window), so the usual
+# naming conventions do not apply.
+"wgpu/_generated/*" = ["N801", "N802", "N803", "N815", "N816"]
 
 [tool.coverage.report]
 exclude_also = [

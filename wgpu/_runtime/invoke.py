@@ -1,10 +1,10 @@
 """Turn a generated ``Method`` descriptor + Python args into a live C call.
 
 Split into a *marshalling* step (Python args -> tuple of cffi values) and the
-*call + wrap* step, so marshalling can be unit-tested without a GPU. Array and
-raw-pointer (``c_void``) arguments, and struct out-returns, are the handful of
-cases not yet covered; they raise a clear ``NotImplementedError`` rather than
-silently doing the wrong thing.
+*call + wrap* step, so marshalling can be unit-tested without a GPU.
+
+Struct out-returns are the one shape not covered yet; that case raises a clear
+``UnsupportedError`` rather than silently doing the wrong thing.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from typing import Any
 from .awaitable import WgpuFuture
 
 
-class Unsupported(NotImplementedError):
+class UnsupportedError(NotImplementedError):
     """Raised for method shapes the invoker does not marshal yet."""
 
 
@@ -41,7 +41,7 @@ class Invoker:
         c_args: list[Any] = []
         keep: list[Any] = []
         pos = 1  # index into c_sig; 0 is the object handle itself
-        for arg, value in zip(method.args, py_args):
+        for arg, value in zip(method.args, py_args, strict=True):
             vals = self._marshal_one(arg, value, keep, c_sig, pos)
             c_args.extend(vals)
             pos += len(vals)
@@ -59,7 +59,9 @@ class Invoker:
             elif arg.kind in ("enum", "bitflag", "prim"):
                 data = [int(it) for it in items]
             else:
-                raise Unsupported(f"array of {arg.kind!r} not supported ({arg.py})")
+                raise UnsupportedError(
+                    f"array of {arg.kind!r} not supported ({arg.py})"
+                )
             cdata = self.ffi.new(f"{elem_ctype}[{len(items)}]", data)
             keep.append(cdata)
             return [len(items), cdata]
@@ -85,7 +87,7 @@ class Invoker:
             cdata = self.ffi.from_buffer(value, require_writable=False)
             keep.append(cdata)
             return [cdata]
-        raise Unsupported(f"argument kind {arg.kind!r}")
+        raise UnsupportedError(f"argument kind {arg.kind!r}")
 
     def _unwrap(self, value):
         if value is None:
@@ -121,21 +123,23 @@ class Invoker:
                 return None
             size = self._size_arg(method, py_args)
             if size is None:
-                raise Unsupported(f"{method.c_func}: cannot size the returned pointer")
+                raise UnsupportedError(
+                    f"{method.c_func}: cannot size the returned pointer"
+                )
             return memoryview(self.ffi.buffer(c_ret, size))
         if kind == "enum":
-            return getattr(self.enums, _py(ref))(c_ret)
+            return self.enums.BY_SPEC_NAME[ref](c_ret)
         if kind == "bitflag":
-            return getattr(self.flags, _py(ref))(c_ret)
+            return self.flags.BY_SPEC_NAME[ref](c_ret)
         if kind == "prim":
             return bool(c_ret) if ref == "bool" else c_ret
         if kind == "struct":
-            raise Unsupported(f"struct return not yet supported ({method.c_func})")
+            raise UnsupportedError(f"struct return not yet supported ({method.c_func})")
         return c_ret
 
     @staticmethod
     def _size_arg(method, py_args):
-        for arg, value in zip(method.args, py_args):
+        for arg, value in zip(method.args, py_args, strict=False):
             if arg.py == "size":
                 return int(value)
         return None
@@ -169,14 +173,14 @@ class Invoker:
             dict(self.ffi.typeof(info).item.fields)["callback"].type
         )
         result_ref = method.callback_result_ref
-        SUCCESS = 1  # every *Status enum uses 1 for success
+        success_status = 1  # every *Status enum uses 1 for success
 
         @self.ffi.callback(cb_ctype)
         def _cb(status, *rest):
             # Callback shape: (status, [result], message, ud1, ud2). When the op
             # yields an object the handle precedes the message; else status only.
             try:
-                if int(status) != SUCCESS:
+                if int(status) != success_status:
                     msg = _message(self.ffi, rest)
                     future.set_error(RuntimeError(f"{method.py} failed: {msg}"))
                 elif result_ref is not None:
@@ -185,7 +189,7 @@ class Invoker:
                     )
                 else:
                     future.set_result(int(status))
-            except BaseException as exc:  # noqa: BLE001
+            except BaseException as exc:
                 future.set_error(exc)
 
         info.callback = _cb
@@ -198,16 +202,16 @@ class Invoker:
 
 def _message(ffi, rest) -> str:
     for item in rest:
-        if isinstance(item, ffi.CData) and "StringView" in ffi.getctype(ffi.typeof(item)):
-            return ffi.string(item.data, item.length).decode("utf-8", "replace") if item.data else ""
+        if isinstance(item, ffi.CData) and "StringView" in ffi.getctype(
+            ffi.typeof(item)
+        ):
+            return (
+                ffi.string(item.data, item.length).decode("utf-8", "replace")
+                if item.data
+                else ""
+            )
     return ""
 
 
 def _is_float(ref: str | None) -> bool:
     return bool(ref) and ref.startswith(("float", "nullable_float"))
-
-
-def _py(spec_name: str) -> str:
-    from bindgen import naming
-
-    return naming.py_enum_name(spec_name)

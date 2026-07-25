@@ -91,7 +91,7 @@ STRUCTS['bind_group_layout_entry'] = StructDescriptor(
     category='extensible',
     members=(
         Member(py='binding', c='binding', kind='prim', ref='uint32', pointer=None, optional=False, default=None, array=False, count_c=None),
-        Member(py='visibility', c='visibility', kind='bitflag', ref='shader_stage', pointer=None, optional=False, default='none', array=False, count_c=None),
+        Member(py='visibility', c='visibility', kind='bitflag', ref='shader_stage', pointer=None, optional=False, default=0, array=False, count_c=None),
         Member(py='binding_array_size', c='bindingArraySize', kind='prim', ref='uint32', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='buffer', c='buffer', kind='struct', ref='buffer_binding_layout', pointer=None, optional=False, default='zero', array=False, count_c=None),
         Member(py='sampler', c='sampler', kind='struct', ref='sampler_binding_layout', pointer=None, optional=False, default='zero', array=False, count_c=None),
@@ -134,7 +134,7 @@ STRUCTS['buffer_descriptor'] = StructDescriptor(
     category='extensible',
     members=(
         Member(py='label', c='label', kind='string', ref=None, pointer=None, optional=False, default=None, array=False, count_c=None),
-        Member(py='usage', c='usage', kind='bitflag', ref='buffer_usage', pointer=None, optional=False, default='none', array=False, count_c=None),
+        Member(py='usage', c='usage', kind='bitflag', ref='buffer_usage', pointer=None, optional=False, default=0, array=False, count_c=None),
         Member(py='size', c='size', kind='prim', ref='uint64', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='mapped_at_creation', c='mappedAtCreation', kind='prim', ref='bool', pointer=None, optional=False, default=False, array=False, count_c=None),
     ),
@@ -157,7 +157,7 @@ STRUCTS['color_target_state'] = StructDescriptor(
     members=(
         Member(py='format', c='format', kind='enum', ref='texture_format', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='blend', c='blend', kind='struct', ref='blend_state', pointer='immutable', optional=True, default=None, array=False, count_c=None),
-        Member(py='write_mask', c='writeMask', kind='bitflag', ref='color_write_mask', pointer=None, optional=False, default='all', array=False, count_c=None),
+        Member(py='write_mask', c='writeMask', kind='bitflag', ref='color_write_mask', pointer=None, optional=False, default=15, array=False, count_c=None),
     ),
 )
 
@@ -680,11 +680,11 @@ STRUCTS['surface_configuration'] = StructDescriptor(
     members=(
         Member(py='device', c='device', kind='object', ref='device', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='format', c='format', kind='enum', ref='texture_format', pointer=None, optional=False, default=None, array=False, count_c=None),
-        Member(py='usage', c='usage', kind='bitflag', ref='texture_usage', pointer=None, optional=False, default='render_attachment', array=False, count_c=None),
+        Member(py='usage', c='usage', kind='bitflag', ref='texture_usage', pointer=None, optional=False, default=16, array=False, count_c=None),
         Member(py='width', c='width', kind='prim', ref='uint32', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='height', c='height', kind='prim', ref='uint32', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='view_formats', c='viewFormats', kind='enum', ref='texture_format', pointer='immutable', optional=False, default=None, array=True, count_c='viewFormatCount'),
-        Member(py='alpha_mode', c='alphaMode', kind='enum', ref='composite_alpha_mode', pointer=None, optional=False, default='auto', array=False, count_c=None),
+        Member(py='alpha_mode', c='alphaMode', kind='enum', ref='composite_alpha_mode', pointer=None, optional=False, default=0, array=False, count_c=None),
         Member(py='present_mode', c='presentMode', kind='enum', ref='present_mode', pointer=None, optional=False, default=None, array=False, count_c=None),
     ),
 )
@@ -830,7 +830,7 @@ STRUCTS['texture_descriptor'] = StructDescriptor(
     category='extensible',
     members=(
         Member(py='label', c='label', kind='string', ref=None, pointer=None, optional=False, default=None, array=False, count_c=None),
-        Member(py='usage', c='usage', kind='bitflag', ref='texture_usage', pointer=None, optional=False, default='none', array=False, count_c=None),
+        Member(py='usage', c='usage', kind='bitflag', ref='texture_usage', pointer=None, optional=False, default=0, array=False, count_c=None),
         Member(py='dimension', c='dimension', kind='enum', ref='texture_dimension', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='size', c='size', kind='struct', ref='extent_3D', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='format', c='format', kind='enum', ref='texture_format', pointer=None, optional=False, default=None, array=False, count_c=None),
@@ -852,7 +852,7 @@ STRUCTS['texture_view_descriptor'] = StructDescriptor(
         Member(py='base_array_layer', c='baseArrayLayer', kind='prim', ref='uint32', pointer=None, optional=False, default=0, array=False, count_c=None),
         Member(py='array_layer_count', c='arrayLayerCount', kind='prim', ref='uint32', pointer=None, optional=False, default='constant.array_layer_count_undefined', array=False, count_c=None),
         Member(py='aspect', c='aspect', kind='enum', ref='texture_aspect', pointer=None, optional=False, default=None, array=False, count_c=None),
-        Member(py='usage', c='usage', kind='bitflag', ref='texture_usage', pointer=None, optional=False, default='none', array=False, count_c=None),
+        Member(py='usage', c='usage', kind='bitflag', ref='texture_usage', pointer=None, optional=False, default=0, array=False, count_c=None),
     ),
 )
 

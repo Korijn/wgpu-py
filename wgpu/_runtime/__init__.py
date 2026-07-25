@@ -15,8 +15,8 @@ from functools import lru_cache
 def get_struct_builder():
     """Return a process-wide :class:`StructBuilder` wired to the generated tables."""
     from wgpu import _native
-    from wgpu._generated import constants, enums, flags, structs
+    from wgpu._generated import constants, structs
 
     from .structs import StructBuilder
 
-    return StructBuilder(_native.ffi, structs.STRUCTS, enums, flags, constants)
+    return StructBuilder(_native.ffi, structs.STRUCTS, constants)

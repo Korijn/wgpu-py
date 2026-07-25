@@ -18,8 +18,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bindgen import build_cdef  # noqa: E402
-from bindgen import ffi_build, paths  # noqa: E402
+from bindgen import build_cdef
+from bindgen import ffi_build, paths
 
 
 def test_cdef_covers_full_surface():

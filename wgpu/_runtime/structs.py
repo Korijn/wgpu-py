@@ -26,11 +26,9 @@ class StructBuilder:
     testable against a freshly-built extension without importing the package.
     """
 
-    def __init__(self, ffi, structs: dict, enums, flags, constants):
+    def __init__(self, ffi, structs: dict, constants):
         self.ffi = ffi
         self.structs = structs
-        self.enums = enums
-        self.flags = flags
         self.constants = constants
 
     # -- public ------------------------------------------------------------
@@ -142,33 +140,16 @@ class StructBuilder:
     # -- defaults ----------------------------------------------------------
 
     def _default(self, mem):
+        # Enum/bitflag defaults are already resolved to ints by the generator;
+        # only the size-dependent ``constant.*`` sentinels stay symbolic.
         d = mem.default
         if d is None:
             return _MISSING
-        if isinstance(d, bool) or isinstance(d, (int, float)):
+        if isinstance(d, (bool, int, float)):
             return d
         if isinstance(d, str):
             if d.startswith("constant."):
                 return getattr(self.constants, d.split(".", 1)[1])
             if d.startswith("0x"):
                 return int(d, 16)
-            # else: an enum/flag member name for this member's type
-            if mem.kind == "enum":
-                cls = getattr(self.enums, _py_type_name(mem.ref))
-                return int(getattr(cls, _member(d)))
-            if mem.kind == "bitflag":
-                cls = getattr(self.flags, _py_type_name(mem.ref))
-                return int(getattr(cls, _member(d)))
         return _MISSING
-
-
-def _py_type_name(spec_name: str) -> str:
-    from bindgen import naming
-
-    return naming.py_enum_name(spec_name)
-
-
-def _member(name: str) -> str:
-    from bindgen import naming
-
-    return naming.py_enum_member(name)

@@ -24,7 +24,7 @@ class Api:
             if isinstance(cls, type) and getattr(cls, "_spec_name", "")
         }
 
-        builder = StructBuilder(self.ffi, structs.STRUCTS, enums, flags, constants)
+        builder = StructBuilder(self.ffi, structs.STRUCTS, constants)
         self.invoker = Invoker(self.ffi, self.lib, builder, self.registry, enums, flags)
 
         # method lookup: (spec_object, method_py) -> Method descriptor
@@ -37,10 +37,7 @@ class Api:
         return self.invoker.call(method, caller, args)
 
     def release(self, spec_object: str, handle):
-        from bindgen import naming
-
-        cfunc = naming.c_object_lifecycle(spec_object, "Release")
-        getattr(self.lib, cfunc)(handle)
+        getattr(self.lib, self.objects[spec_object].release_func)(handle)
 
     def create_instance(self, descriptor=None):
         """Entry point: create the root :class:`GPUInstance`."""
@@ -48,9 +45,11 @@ class Api:
         if descriptor:
             ptr, _keep = self.invoker.structs.new("instance_descriptor", descriptor)
         handle = self.lib.wgpuCreateInstance(ptr)
+        if not handle:
+            raise RuntimeError("wgpuCreateInstance failed to create an instance")
         # The instance's pump drives every downstream async op; child objects
         # inherit it as they are created.
-        pump = lambda: self.lib.wgpuInstanceProcessEvents(handle)  # noqa: E731
+        pump = lambda: self.lib.wgpuInstanceProcessEvents(handle)
         return self.registry["instance"](handle, pump)
 
 

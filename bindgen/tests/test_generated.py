@@ -5,7 +5,6 @@ Skipped unless the low-level extension has been built and the generator has run
 """
 
 import importlib.util
-from pathlib import Path
 
 import pytest
 
@@ -14,7 +13,8 @@ from bindgen.generate import GENERATED_DIR, load_spec
 
 pytestmark = pytest.mark.skipif(
     not (GENERATED_DIR / "enums.py").exists()
-    or not (paths.REPO_ROOT / "wgpu" / "_native").glob("_wgpu.*"),
+    # NB: list() -- Path.glob returns a generator, which is always truthy.
+    or not list((paths.REPO_ROOT / "wgpu" / "_native").glob("_wgpu.*")),
     reason="run bindgen.ffi_build + bindgen.generate first",
 )
 
@@ -62,7 +62,9 @@ def test_flags_are_intflag_and_combine():
 
     assert issubclass(flags.BufferUsage, enum.IntFlag)
     combo = flags.BufferUsage.map_read | flags.BufferUsage.copy_dst
-    assert int(combo) == int(flags.BufferUsage.map_read) + int(flags.BufferUsage.copy_dst)
+    assert int(combo) == int(flags.BufferUsage.map_read) + int(
+        flags.BufferUsage.copy_dst
+    )
     # ColorWriteMask.all is the OR of its components
     assert int(flags.ColorWriteMask.all) == 15
 

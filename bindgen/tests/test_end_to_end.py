@@ -50,7 +50,11 @@ def test_create_buffer_struct_arg(device):
     from wgpu._generated import flags
 
     buf = device.create_buffer(
-        {"label": "vbuf", "usage": flags.BufferUsage.copy_src | flags.BufferUsage.copy_dst, "size": 256}
+        {
+            "label": "vbuf",
+            "usage": flags.BufferUsage.copy_src | flags.BufferUsage.copy_dst,
+            "size": 256,
+        }
     )
     assert type(buf).__name__ == "GPUBuffer"
     assert buf.get_size() == 256  # scalar return
@@ -64,12 +68,16 @@ def test_gpu_data_roundtrip(device):
     """
     from wgpu._generated import flags
 
-    BU = flags.BufferUsage
+    usage = flags.BufferUsage
     data = bytes(range(16))
 
     queue = device.get_queue()
-    src = device.create_buffer({"label": "src", "usage": BU.copy_src | BU.copy_dst, "size": 16})
-    dst = device.create_buffer({"label": "dst", "usage": BU.copy_dst | BU.map_read, "size": 16})
+    src = device.create_buffer(
+        {"label": "src", "usage": usage.copy_src | usage.copy_dst, "size": 16}
+    )
+    dst = device.create_buffer(
+        {"label": "dst", "usage": usage.copy_dst | usage.map_read, "size": 16}
+    )
 
     queue.write_buffer(src, 0, data, len(data))  # c_void data arg
     encoder = device.create_command_encoder()

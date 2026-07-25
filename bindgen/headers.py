@@ -102,4 +102,6 @@ def build_cdef(ffi_dir: str | Path) -> str:
     header = (
         "/* Auto-generated from the wgpu-native submodule headers. Do not edit. */\n"
     )
-    return header + webgpu + "\n\n/* ---- wgpu-native extensions (wgpu.h) ---- */\n" + wgpu
+    return (
+        header + webgpu + "\n\n/* ---- wgpu-native extensions (wgpu.h) ---- */\n" + wgpu
+    )

@@ -47,6 +47,7 @@ def camel_case(name: str) -> str:
 
 # ---- C spellings -----------------------------------------------------------
 
+
 def c_type_name(spec_name: str) -> str:
     """``buffer_descriptor`` -> ``WGPUBufferDescriptor`` (structs, enums, objects)."""
     return C_PREFIX + pascal_case(spec_name)
@@ -95,6 +96,7 @@ def c_toplevel_func(func_spec_name: str) -> str:
 
 
 # ---- Python spellings ------------------------------------------------------
+
 
 def py_class_name(object_spec_name: str) -> str:
     """``command_encoder`` -> ``CommandEncoder`` (GPU prefix added by the shim)."""
