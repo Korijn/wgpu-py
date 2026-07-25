@@ -13,8 +13,14 @@ WEBGPU_HEADERS_DIR = FFI_DIR / "webgpu-headers"
 #: Directories to pass to the C compiler as ``-I`` include paths.
 INCLUDE_DIRS = (str(FFI_DIR), str(WEBGPU_HEADERS_DIR))
 
-#: The machine-readable WebGPU spec (source of truth for the high-level layer).
+#: The machine-readable WebGPU **C** spec: source of truth for the FFI layer.
 WEBGPU_JSON = WEBGPU_HEADERS_DIR / "webgpu.json"
+
+#: The W3C WebGPU **Web IDL**: source of truth for the *public* API shape --
+#: class/method names, enum string values, struct fields and their defaults.
+#: Vendored (rather than taken from the submodule) because it tracks the W3C
+#: spec, not wgpu-native.
+WEBGPU_IDL = Path(__file__).resolve().parent / "resources" / "webgpu.idl"
 
 
 def static_lib_path(profile: str = "release") -> Path:
