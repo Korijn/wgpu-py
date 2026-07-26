@@ -21,3 +21,6 @@ query_set_index_undefined = 0xFFFFFFFF
 strlen = _SIZE_T_MAX
 whole_map_size = _SIZE_T_MAX
 whole_size = 0xFFFFFFFFFFFFFFFF
+
+#: The wgpu-native release this package was generated against.
+WGPU_NATIVE_VERSION = '29.0.1.1'

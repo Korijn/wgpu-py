@@ -40,6 +40,24 @@ def unimplemented_functions() -> frozenset[str]:
     )
 
 
+def native_version() -> str:
+    """The wgpu-native version this build is pinned to.
+
+    Read from the submodule's git tag: wgpu-native's Cargo version is a
+    placeholder, and wgpuGetVersion() reports 0.0.0.0 unless the build sets it.
+    """
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            ["git", "describe", "--tags", "--always"],
+            cwd=NATIVE_ROOT, capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    return proc.stdout.strip().lstrip("v") or "unknown"
+
+
 def static_lib_path(profile: str = "release") -> Path:
     """Path to the compiled ``libwgpu_native`` static archive."""
     if sys.platform.startswith("win"):

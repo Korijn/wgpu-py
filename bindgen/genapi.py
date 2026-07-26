@@ -729,8 +729,10 @@ def _emit_override_hook(cls_name, fn_name, line="") -> list[str]:
     """
     py = bridge.camel_to_snake(fn_name)
     prefix = _override_prefix(cls_name)
-    if line.strip().startswith("Promise<") and py.endswith("_async"):
-        base = py[: -len("_async")]
+    if line.strip().startswith("Promise<"):
+        # A promise-returning method needs its whole family bound, whether or
+        # not the IDL name already carries the Async suffix.
+        base = py[: -len("_async")] if py.endswith("_async") else py
         return [
             f"    {base}_async = _ov.{prefix}_{base}_async",
             f"    {base}_sync = _ov.{prefix}_{base}_sync",

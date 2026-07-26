@@ -67,11 +67,20 @@ def _shader_source(builder, out: dict, keep: list) -> None:
     code = out.pop("code", None)
     if code is None:
         return
-    if not isinstance(code, str):
-        # Anything else is SPIR-V bytes, which wgpu-native also accepts.
-        out["_chain"] = ("shader_source_SPIRV", {"code": code})
+    if isinstance(code, str):
+        out["_chain"] = ("shader_source_WGSL", {"code": code})
         return
-    out["_chain"] = ("shader_source_WGSL", {"code": code})
+    # Anything else is SPIR-V: a blob of 32-bit words, which C takes as a word
+    # count plus a uint32 pointer rather than as a string.
+    view = memoryview(code).cast("B")
+    if view.nbytes % 4:
+        raise ValueError(
+            f"SPIR-V shader source must be a multiple of 4 bytes, got {view.nbytes}"
+        )
+    out["_chain"] = (
+        "shader_source_SPIRV",
+        {"code_size": view.nbytes // 4, "code": view.cast("I")},
+    )
 
 
 def _texel_copy_layout(builder, out: dict, keep: list) -> None:

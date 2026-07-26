@@ -112,10 +112,6 @@ class StructBuilder:
                     f"{len(desc.members)} fields"
                 )
             mapping = {m.py: v for m, v in zip(desc.members, values)}
-        elif any("-" in k for k in mapping):
-            # wgpu-py has always accepted the WebGPU spec's hyphenated spelling
-            # of struct fields ("max-bind-groups") alongside the Pythonic one.
-            mapping = {k.replace("-", "_"): v for k, v in mapping.items()}
         if desc.adapters:
             from wgpu._api import adapt
 
@@ -123,7 +119,19 @@ class StructBuilder:
         chain = mapping.pop("_chain", None) if "_chain" in mapping else None
         if chain is not None:
             self._chain(ptr, chain, keep)
-        unknown = set(mapping) - {m.py for m in desc.members}
+        known = {m.py for m in desc.members}
+        unknown = set(mapping) - known
+        if unknown:
+            # The same field is spelled three ways across the specs and the
+            # docs -- max_bind_groups, max-bind-groups, maxBindGroups -- and
+            # wgpu-py has always taken all of them. Only pay for this when a
+            # key does not already match.
+            mapping = dict(mapping)
+            for key in unknown:
+                normalised = _normalise_key(key)
+                if normalised in known:
+                    mapping[normalised] = mapping.pop(key)
+            unknown = set(mapping) - known
         if unknown:
             raise TypeError(f"{desc.c_name}: unexpected fields {sorted(unknown)}")
         for mem in desc.members:
@@ -147,7 +155,14 @@ class StructBuilder:
         elif mem.kind == "bitflag":
             setattr(ptr, field, self.flags.TO_INT[mem.ref][value])
         elif mem.kind == "prim":
-            setattr(ptr, field, self._scalar(mem, value))
+            if mem.pointer:
+                # A pointer to primitives is a buffer -- SPIR-V word arrays
+                # arrive this way.
+                cdata = self.ffi.from_buffer(value, require_writable=False)
+                keep.append(cdata)
+                setattr(ptr, field, self.ffi.cast(f"{mem.ref}_t *", cdata))
+            else:
+                setattr(ptr, field, self._scalar(mem, value))
         elif mem.kind == "string":
             self._set_string(getattr(ptr, field), value, keep)
         elif mem.kind == "object":
@@ -287,6 +302,19 @@ class StructBuilder:
             if d.startswith("0x"):
                 return int(d, 16)
         return _MISSING
+
+
+def _normalise_key(key: str) -> str:
+    """``max-bind-groups`` / ``maxBindGroups`` -> ``max_bind_groups``."""
+    if not isinstance(key, str):
+        return key
+    key = key.replace("-", "_")
+    out = []
+    for i, ch in enumerate(key):
+        if ch.isupper() and i and key[i - 1] != "_":
+            out.append("_")
+        out.append(ch.lower())
+    return "".join(out)
 
 
 def _string(ffi, view) -> str:

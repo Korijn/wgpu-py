@@ -354,6 +354,9 @@ def generate_constants(spec) -> str:
         expr = _CONST_EXPR[const["value"]]
         lines.append(f"{const['name']} = {expr}")
     lines.append("")
+    lines.append("#: The wgpu-native release this package was generated against.")
+    lines.append(f"WGPU_NATIVE_VERSION = {paths.native_version()!r}")
+    lines.append("")
     return "\n".join(lines)
 
 
