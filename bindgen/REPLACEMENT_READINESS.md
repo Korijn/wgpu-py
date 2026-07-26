@@ -84,16 +84,20 @@ differs. Best of three runs each (`python -m bindgen.tests.benchmark`).
 | --- | ---: | ---: | --- |
 | device startup | 635.1 ms | **52.9 ms** | **12.0x faster** |
 | set_bind_group | 1.49 us | **0.25 us** | **6.1x faster** |
+| create_buffer | 9.65 us | **3.72 us** | **2.6x faster** |
 | dispatch_workgroups | 1.37 us | **0.68 us** | **2.0x faster** |
+| record_pass | 65.2 us | **53.9 us** | **1.2x faster** |
 | create_bind_group_layout | 19.6 us | 20.6 us | 1.05x slower |
-| create_buffer | 9.65 us | 10.9 us | 1.13x slower |
-| record_pass | 65.2 us | 75.6 us | 1.16x slower |
-| write_buffer | 6.46 us | 9.04 us | 1.40x slower |
+| write_buffer | 6.46 us | 8.93 us | 1.38x slower |
 | property reads | 0.083 us | 0.162 us | 1.94x slower |
 
 The hot path -- the calls a frame makes thousands of times -- is where the win
 is. Startup is 12x because the library is statically linked: no download, no
 runtime version probe, far less import work.
+
+`create_bind_group_layout` is the one remaining case that still marshals a
+descriptor at runtime, because it takes an array of structs; the technique that
+fixed `create_buffer` would apply to it too.
 
 ### How the hot path got there
 
@@ -119,11 +123,28 @@ wgpu-native error. Errors still surface, at the next call that does check --
 use the general path. That is where the classic implementation reported them
 too, and `test_direct_calls.py` pins it.
 
-The cases still slower than classic are all cold or mid paths that run once
-per resource rather than once per draw: descriptor marshalling through the
-generic struct builder, and cached property reads (a dict lookup rather than a
-plain attribute, 0.08 us each). The same generation technique would apply if
-profiling ever showed they mattered.
+* **Compiled descriptor bodies.** The interpreted struct builder walks a
+  descriptor on every call -- look up the member, dispatch on its kind,
+  normalise the key, apply the default -- and none of that depends on the
+  values. For a struct whose members are each settable in one statement, the
+  generator does the walk once and emits straight-line code. Measured against
+  hand-written cffi doing the identical work (2.26 us), `create_buffer` went
+  from 12.6 to 3.7 us, i.e. from 82% marshalling overhead to about 40%.
+  Eleven methods qualify, including both `finish()` calls.
+* **Handle arrays inline.** `submit()` runs once per frame; an array of object
+  handles is one list comprehension, so it is emitted inline too. The wrinkle
+  is that one IDL parameter becomes two C ones (count and pointer).
+
+Not every method gets the deferred-error treatment. The rule is that a call
+which *allocates* is not in the zero-allocation hot class, so it can afford to
+check: the compiled descriptor bodies and the array calls report errors
+immediately. That keeps `finish()` and `submit()` as the boundaries the
+genuinely deferred errors surface at, which the rest of the API relies on.
+
+The cases still slower than classic are cold or mid paths that run once per
+resource rather than once per draw: the descriptors that still marshal at
+runtime because they contain arrays or nested structs, and cached property
+reads (a dict lookup rather than a plain attribute, 0.08 us each).
 
 Note that creating and dropping GPU objects in a loop gets steadily slower in
 **both** implementations -- the cost is inside wgpu-native's resource
