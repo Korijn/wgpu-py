@@ -85,9 +85,7 @@ class FlagMap(dict):
                 # through __missing__ and recurse on an unknown name.
                 one = dict.get(self, part.upper())
                 if one is None:
-                    raise InvalidValueError(
-                        f"Invalid flag for {self.name}: {part!r}"
-                    )
+                    raise InvalidValueError(f"Invalid flag for {self.name}: {part!r}")
                 value |= one
             self._cache[key] = value
             return value

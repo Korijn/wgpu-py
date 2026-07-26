@@ -237,19 +237,19 @@ class Invoker:
         if ret_kind is None or (ret_kind == "prim" and ret_ref != "bool"):
             wrap = None  # void, or a C value that is already what we want
         elif ret_kind == "object":
+
             def wrap(value, caller):
                 if not value:
                     return None if method.ret_optional else value
                 return self._wrap_object(ret_ref, value, caller._pump, caller)
         else:
+
             def wrap(value, caller):
                 return self.wrap_return(method, value)
 
         def fast_call(caller, py_args, _c=cfunc, _conv=converters, _n=n_args):
             if len(py_args) != _n:
-                raise TypeError(
-                    f"{method.py}() takes {_n} args, got {len(py_args)}"
-                )
+                raise TypeError(f"{method.py}() takes {_n} args, got {len(py_args)}")
             result = _c(caller._handle, *[f(v) for f, v in zip(_conv, py_args)])
             return result if wrap is None else wrap(result, caller)
 
@@ -262,7 +262,13 @@ class Invoker:
         cfunc = getattr(self.lib, method.c_func)
         if method.is_async:
             return self._call_async(
-                method, cfunc, self_handle, c_args, keep, pump, caller,
+                method,
+                cfunc,
+                self_handle,
+                c_args,
+                keep,
+                pump,
+                caller,
                 label=_descriptor_label(py_args),
             )
         c_ret = cfunc(self_handle, *c_args)

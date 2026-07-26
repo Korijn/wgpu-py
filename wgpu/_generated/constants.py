@@ -24,3 +24,7 @@ whole_size = 0xFFFFFFFFFFFFFFFF
 
 #: The wgpu-native release this package was generated against.
 WGPU_NATIVE_VERSION = '29.0.1.1'
+
+#: The exact wgpu-native commit compiled into this package.
+#: Statically linked, so there is no library file to ask later.
+WGPU_NATIVE_COMMIT_SHA = '6aed50955d934ac36049ba8d002034841633ae02'

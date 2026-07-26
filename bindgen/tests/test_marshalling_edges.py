@@ -48,9 +48,7 @@ def test_omitted_string_is_null_not_empty(device):
         code="@compute @workgroup_size(1) fn main() {}"
     )
     layout = device.create_pipeline_layout(bind_group_layouts=[])
-    pipeline = device.create_compute_pipeline(
-        layout=layout, compute={"module": module}
-    )
+    pipeline = device.create_compute_pipeline(layout=layout, compute={"module": module})
     assert pipeline is not None
 
 
@@ -203,9 +201,7 @@ def test_queued_writes_are_visible_once_mapped(device):
 
 
 def test_mapped_at_creation_survives_a_remap(device):
-    buffer = device.create_buffer(
-        size=12, usage="MAP_READ", mapped_at_creation=True
-    )
+    buffer = device.create_buffer(size=12, usage="MAP_READ", mapped_at_creation=True)
     buffer.write_mapped(b"abcdefghijkl")
     buffer.unmap()
     buffer.map_sync("read")
@@ -243,6 +239,64 @@ def test_clear_buffer_rejects_a_bad_range_at_the_call(device, args):
     encoder = device.create_command_encoder()
     with pytest.raises(ValueError):
         encoder.clear_buffer(buffer, *args)
+
+
+def test_mapped_views_are_released_on_unmap(device):
+    """A dangling view onto reclaimed memory reads garbage; a released one raises."""
+    buffer = device.create_buffer(size=16, usage="MAP_READ|COPY_DST")
+    device.queue.write_buffer(buffer, 0, b"0123456789abcdef")
+    buffer.map_sync("read")
+    view = buffer.read_mapped(copy=False)
+    assert view[0] == ord("0")
+    buffer.unmap()
+    with pytest.raises(ValueError):
+        view[0]
+
+
+def test_a_copied_read_survives_unmap(device):
+    buffer = device.create_buffer(size=16, usage="MAP_READ|COPY_DST")
+    device.queue.write_buffer(buffer, 0, b"0123456789abcdef")
+    buffer.map_sync("read")
+    data = buffer.read_mapped()
+    buffer.unmap()
+    assert bytes(data) == b"0123456789abcdef"
+
+
+def test_read_texture_pads_the_row_stride(device):
+    """wgpu-native only copies 256-byte rows; read_texture asks for what you want."""
+    width, height = 5, 3  # 5 * 4 = 20 bytes per row, nowhere near 256
+    texture = device.create_texture(
+        size=(width, height, 1),
+        format="rgba8unorm",
+        usage="COPY_DST|COPY_SRC",
+    )
+    data = bytes(range(width * height * 4))
+    device.queue.write_texture(
+        {"texture": texture},
+        data,
+        {"bytes_per_row": width * 4, "rows_per_image": height},
+        (width, height, 1),
+    )
+    out = device.queue.read_texture(
+        {"texture": texture},
+        {"bytes_per_row": width * 4, "rows_per_image": height},
+        (width, height, 1),
+    )
+    assert bytes(out) == data
+
+
+def test_copy_texture_to_buffer_rejects_an_unaligned_row(device):
+    texture = device.create_texture(
+        size=(5, 3, 1), format="rgba8unorm", usage="COPY_SRC"
+    )
+    buffer = device.create_buffer(size=4096, usage="COPY_DST")
+    encoder = device.create_command_encoder()
+    with pytest.raises(ValueError, match="256"):
+        encoder.copy_texture_to_buffer(
+            {"texture": texture},
+            {"buffer": buffer, "offset": 0, "bytes_per_row": 20},
+            (5, 3, 1),
+        )
 
 
 def test_clear_buffer_accepts_a_good_range(device):
@@ -312,6 +366,64 @@ def test_stencil_ops_are_kept_for_a_depth_stencil_target(wgpu, device):
         assert not warnings
     finally:
         wgpu.logger.warning = original
+
+
+# -- wgpu-native's own voice -------------------------------------------------
+
+
+def test_native_log_reaches_the_python_logger(wgpu, device, caplog):
+    """The detail behind a shader error arrives through the log, not the error.
+
+    wgpu-native reports "validation failed"; naga explains *why* through its
+    log. Without the bridge the explanation is simply dropped.
+    """
+    import logging
+
+    code = """
+        struct Varyings {
+            @builtin(position) position : vec4<f32>,
+            @location(0) uv : vec2<f32>,
+        };
+        @vertex
+        fn fs_main(in: Varyings) -> @location(0) vec4<f32> {
+            return vec3<f32>(1.0, 0.0, 1.0);
+        }
+    """
+    with caplog.at_level(logging.INFO, logger="wgpu"):
+        with pytest.raises(wgpu.GPUError):
+            device.create_shader_module(code=code)
+    assert caplog.records, "wgpu-native said nothing -- is the log bridge installed?"
+    assert "is expected" in caplog.records[0].msg
+
+
+def test_the_log_level_is_pushed_down_to_native(wgpu):
+    """Filtering in Rust means the suppressed messages are never formatted."""
+    from wgpu._runtime import logbridge
+
+    assert logbridge._callback is not None
+    from wgpu._coreutils import logger_set_level_callbacks
+
+    assert logbridge._set_native_level in logger_set_level_callbacks
+
+
+# -- version metadata --------------------------------------------------------
+
+
+def test_the_pinned_wgpu_native_commit_is_recorded(wgpu):
+    """A static link leaves no library to inspect, so it is recorded instead."""
+    import wgpu.backends.wgpu_native as native
+
+    assert len(native.__commit_sha__) >= 7
+    assert len(native.version_info) == 4
+    assert all(isinstance(part, int) for part in native.version_info)
+    assert native.lib_path.endswith((".so", ".pyd", ".dylib"))
+
+
+def test_the_diagnostics_report_runs(wgpu):
+    import wgpu.backends.wgpu_native
+
+    text = wgpu.diagnostics.get_report()
+    assert "wgpu_native_info" in text
 
 
 # -- the hooks themselves ----------------------------------------------------

@@ -50,6 +50,11 @@ class Api:
 
         base.publish_error_tracker(self.errors)
 
+        # wgpu-native's own log carries the detail behind its error messages.
+        from .logbridge import install as _install_log_bridge
+
+        _install_log_bridge()
+
     # -- error plumbing ----------------------------------------------------
 
     def _build_error_callbacks(self) -> dict:

@@ -299,9 +299,7 @@ class StructBuilder:
             for i, item in enumerate(items):
                 self._fill(self.ffi.addressof(arr, i), child_desc, item or {}, keep)
         elif mem.kind == "object":  # array of handles
-            arr = self.ffi.new(
-                f"{elem_ctype}[{n}]", [self._handle(it) for it in items]
-            )
+            arr = self.ffi.new(f"{elem_ctype}[{n}]", [self._handle(it) for it in items])
         elif mem.kind == "enum":  # array of enums, given as public strings
             table = self.enums.TO_INT[mem.ref]
             arr = self.ffi.new(f"{elem_ctype}[{n}]", [table[it] for it in items])

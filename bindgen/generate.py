@@ -361,6 +361,10 @@ def generate_constants(spec) -> str:
     lines.append("#: The wgpu-native release this package was generated against.")
     lines.append(f"WGPU_NATIVE_VERSION = {paths.native_version()!r}")
     lines.append("")
+    lines.append("#: The exact wgpu-native commit compiled into this package.")
+    lines.append("#: Statically linked, so there is no library file to ask later.")
+    lines.append(f"WGPU_NATIVE_COMMIT_SHA = {paths.native_commit_sha()!r}")
+    lines.append("")
     return "\n".join(lines)
 
 

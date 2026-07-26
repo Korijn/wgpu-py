@@ -49,6 +49,9 @@ GPUCommandEncoder.begin_render_pass = _ov.drop_inapplicable_aspect_ops(
     GPUCommandEncoder.begin_render_pass
 )
 GPUCommandEncoder.clear_buffer = _ov.check_clear_range(GPUCommandEncoder.clear_buffer)
+GPUCommandEncoder.copy_texture_to_buffer = _ov.check_copy_alignment(
+    GPUCommandEncoder.copy_texture_to_buffer
+)
 GPUBuffer.read_mapped = _x.buffer_read_mapped
 GPUBuffer.write_mapped = _x.buffer_write_mapped
 GPUDevice.create_buffer_with_data = _x.device_create_buffer_with_data

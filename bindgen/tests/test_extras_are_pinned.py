@@ -32,8 +32,23 @@ def lib():
 
 
 def _referenced_c_names():
-    """Every ``_lib.wgpuX`` / ``_lib.WGPUX`` the extras module mentions."""
-    return sorted(set(re.findall(r"_lib\.((?:wgpu|WGPU)\w+)", EXTRAS.read_text())))
+    """Every C name the extras module reaches for, however it spells it.
+
+    Both forms count: ``_lib.wgpuFoo`` written out, and ``"wgpuFoo"`` as a
+    string that ``getattr`` resolves later -- one function is dispatched
+    through a table, and a name that only the table knows would otherwise slip
+    past this check entirely.
+    """
+    source = EXTRAS.read_text()
+    names = set(re.findall(r"_lib\.((?:wgpu|WGPU)\w+)", source))
+    names |= set(re.findall(r"[\"']((?:wgpu|WGPU)\w+)[\"']", source))
+    return sorted(names)
+
+
+def _referenced_ctypes():
+    """Every C type name the extras module hands to ``_ffi.new``."""
+    source = EXTRAS.read_text()
+    return sorted(set(re.findall(r"_ffi\.new\(\s*[\"']([^\"']+)[\"']", source)))
 
 
 def test_extras_reference_real_c_functions(lib):
@@ -43,6 +58,50 @@ def test_extras_reference_real_c_functions(lib):
     assert not missing, (
         f"extras.py calls C names wgpu-native no longer provides: {missing}"
     )
+
+
+def test_extras_allocate_real_c_types():
+    """A ctype only exists as a string until something allocates one."""
+    sys.path.insert(0, str(paths.REPO_ROOT))
+    from wgpu._native import ffi
+
+    unknown = []
+    for ctype in _referenced_ctypes():
+        try:
+            ffi.typeof(ctype.replace("[]", "[1]"))
+        except Exception:
+            unknown.append(ctype)
+    assert not unknown, (
+        f"extras.py allocates C types wgpu-native no longer provides: {unknown}"
+    )
+
+
+def test_pipeline_statistic_names_match_the_header(lib):
+    """``PipelineStatisticName`` is hand-written; wgpu.h is the truth.
+
+    It is spelled out because the Web IDL knows nothing about pipeline
+    statistics, but the values are wgpu-native's, so the two can drift. The
+    names are compared, not just the count: a reordering would keep the count.
+    """
+    sys.path.insert(0, str(paths.REPO_ROOT))
+    from wgpu.backends.wgpu_native.extras import (
+        _PIPELINE_STATISTICS,
+        PipelineStatisticName,
+    )
+
+    header = (paths.FFI_DIR / "wgpu.h").read_text()
+    in_header = {
+        n
+        for n in re.findall(r"WGPUPipelineStatisticName_(\w+)", header)
+        if n != "Force32"
+    }
+    declared = {
+        name for name in vars(PipelineStatisticName) if not name.startswith("_")
+    }
+    assert declared == in_header
+    for name in declared:
+        value = getattr(lib, f"WGPUPipelineStatisticName_{name}")
+        assert _PIPELINE_STATISTICS[getattr(PipelineStatisticName, name)] == int(value)
 
 
 def test_extras_do_not_call_unimplemented_functions():
@@ -60,6 +119,4 @@ def test_generated_layer_never_calls_unimplemented_functions():
     source = (GENERATED_DIR / "apiclasses.py").read_text()
     bound = set(re.findall(r"_c_(\w+) = _lib\.", source))
     called = bound & paths.unimplemented_functions()
-    assert not called, (
-        f"generated code binds unimplemented functions: {sorted(called)}"
-    )
+    assert not called, f"generated code binds unimplemented functions: {sorted(called)}"

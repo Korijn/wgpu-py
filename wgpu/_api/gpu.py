@@ -7,6 +7,7 @@ written by hand on top of the generated instance object.
 
 from __future__ import annotations
 
+from wgpu._api import overrides
 from wgpu._api.types import CanvasLike
 
 
@@ -69,6 +70,8 @@ class GPU:
             force_fallback_adapter=force_fallback_adapter,
             canvas=canvas,
         ).sync_wait()
+
+    request_adapter = overrides.deprecated_sync_or_async("request_adapter")
 
     def enumerate_adapters_async(self):
         """List every adapter wgpu-native can see."""

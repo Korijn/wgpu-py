@@ -10,6 +10,7 @@ from __future__ import annotations
 from wgpu._native import ffi as _ffi
 from wgpu._native import lib as _lib
 from wgpu._runtime.api import get_api
+from wgpu._runtime.maps import EnumMap as _EnumMap
 
 
 class PipelineStatisticName:
@@ -22,38 +23,55 @@ class PipelineStatisticName:
     ComputeShaderInvocations = "compute-shader-invocations"
 
 
-_PIPELINE_STATISTICS = {
-    PipelineStatisticName.VertexShaderInvocations: 0,
-    PipelineStatisticName.ClipperInvocations: 1,
-    PipelineStatisticName.ClipperPrimitivesOut: 2,
-    PipelineStatisticName.FragmentShaderInvocations: 3,
-    PipelineStatisticName.ComputeShaderInvocations: 4,
-}
+# An EnumMap rather than a plain dict, so these names take the same three
+# spellings every other enum does -- hyphen-, snake- and CamelCase alike.
+_PIPELINE_STATISTICS = _EnumMap(
+    "PipelineStatisticName",
+    {
+        PipelineStatisticName.VertexShaderInvocations: 0,
+        PipelineStatisticName.ClipperInvocations: 1,
+        PipelineStatisticName.ClipperPrimitivesOut: 2,
+        PipelineStatisticName.FragmentShaderInvocations: 3,
+        PipelineStatisticName.ComputeShaderInvocations: 4,
+    },
+)
 
 
 # -- timestamps and pipeline statistics --------------------------------------
+
+
+#: One C function per encoder kind -- they take different handle types, so the
+#: right one is chosen by what was passed in rather than by an argument.
+_WRITE_TIMESTAMP = {
+    "command_encoder": "wgpuCommandEncoderWriteTimestamp",
+    "compute_pass_encoder": "wgpuComputePassEncoderWriteTimestamp",
+    "render_pass_encoder": "wgpuRenderPassEncoderWriteTimestamp",
+}
 
 
 def write_timestamp(encoder, query_set, query_index):
     """Write a timestamp into ``query_set`` at ``query_index``.
 
     Unlike the standard timestamp writes, this can be issued anywhere in a
-    command encoder rather than only at a pass boundary.
+    command encoder or inside a compute or render pass, rather than only at a
+    pass boundary. Which of those you have decides which C function applies.
     """
-    _lib.wgpuCommandEncoderWriteTimestamp(
-        encoder._handle, query_set._handle, int(query_index)
-    )
+    c_func = _WRITE_TIMESTAMP.get(encoder._spec_name)
+    if c_func is None:
+        raise TypeError(
+            f"write_timestamp() takes a command encoder or a pass encoder, "
+            f"not {type(encoder).__name__}"
+        )
+    getattr(_lib, c_func)(encoder._handle, query_set._handle, int(query_index))
 
 
 def create_statistics_query_set(device, *, label="", count, statistics):
     """Create a query set that records pipeline statistics."""
-    unknown = [s for s in statistics if s not in _PIPELINE_STATISTICS]
-    if unknown:
-        raise ValueError(f"Unknown pipeline statistics: {unknown}")
+    # The map raises for an unknown name, naming the valid ones.
     values = [_PIPELINE_STATISTICS[s] for s in statistics]
 
     api = get_api()
-    stats = _ffi.new("WGPUNativeQueryType[]", values)
+    stats = _ffi.new("WGPUPipelineStatisticName[]", values)
     ext = _ffi.new("WGPUQuerySetDescriptorExtras *")
     ext.chain.sType = _lib.WGPUSType_QuerySetDescriptorExtras
     ext.pipelineStatistics = stats
@@ -120,24 +138,42 @@ def multi_draw_indexed_indirect(render_pass_encoder, buffer, *, offset=0, count)
 
 
 def multi_draw_indirect_count(
-    render_pass_encoder, buffer, *, offset=0, count_buffer, count_buffer_offset=0,
+    render_pass_encoder,
+    buffer,
+    *,
+    offset=0,
+    count_buffer,
+    count_buffer_offset=0,
     max_count,
 ):
     """Like `multi_draw_indirect()`, with the draw count read from the GPU."""
     _lib.wgpuRenderPassEncoderMultiDrawIndirectCount(
-        render_pass_encoder._handle, buffer._handle, int(offset),
-        count_buffer._handle, int(count_buffer_offset), int(max_count),
+        render_pass_encoder._handle,
+        buffer._handle,
+        int(offset),
+        count_buffer._handle,
+        int(count_buffer_offset),
+        int(max_count),
     )
 
 
 def multi_draw_indexed_indirect_count(
-    render_pass_encoder, buffer, *, offset=0, count_buffer, count_buffer_offset=0,
+    render_pass_encoder,
+    buffer,
+    *,
+    offset=0,
+    count_buffer,
+    count_buffer_offset=0,
     max_count,
 ):
     """Indexed form of `multi_draw_indirect_count()`."""
     _lib.wgpuRenderPassEncoderMultiDrawIndexedIndirectCount(
-        render_pass_encoder._handle, buffer._handle, int(offset),
-        count_buffer._handle, int(count_buffer_offset), int(max_count),
+        render_pass_encoder._handle,
+        buffer._handle,
+        int(offset),
+        count_buffer._handle,
+        int(count_buffer_offset),
+        int(max_count),
     )
 
 

@@ -7,6 +7,8 @@ counterpart. They are attached to the generated classes in ``wgpu._api``.
 
 from __future__ import annotations
 
+from wgpu._api.overrides import _COPY_BYTES_PER_ROW_ALIGNMENT
+
 
 # -- GPUBuffer ---------------------------------------------------------------
 
@@ -97,27 +99,49 @@ def queue_read_buffer(self, buffer, buffer_offset=0, size=None):
 
 
 def queue_read_texture(self, source, data_layout, size):
-    """Read back a region of a texture, as a ``bytearray``."""
+    """Read back a region of a texture, as a ``bytearray``.
+
+    The caller's ``bytes_per_row`` describes the layout they want back.
+    wgpu-native, meanwhile, only copies into a buffer whose rows are a
+    multiple of 256 bytes -- so a wider stride is used for the copy and the
+    padding is dropped row by row on the way out. Padding the request rather
+    than rejecting it is the whole point of this helper existing.
+    """
     from wgpu._generated import apiflags as flags
 
     device = self._parent
-    bytes_per_row = data_layout["bytes_per_row"]
+    stride = int(data_layout["bytes_per_row"])
+    offset = int(data_layout.get("offset", 0))
     rows_per_image = data_layout.get("rows_per_image") or size[1]
-    nbytes = bytes_per_row * rows_per_image * size[2]
+    padded = stride + (-stride % _COPY_BYTES_PER_ROW_ALIGNMENT)
+    rows = size[1] * size[2]
+
     staging = device.create_buffer(
-        size=nbytes, usage=flags.BufferUsage.COPY_DST | flags.BufferUsage.MAP_READ
+        size=padded * rows_per_image * size[2],
+        usage=flags.BufferUsage.COPY_DST | flags.BufferUsage.MAP_READ,
     )
     encoder = device.create_command_encoder()
     encoder.copy_texture_to_buffer(
         source,
-        {"buffer": staging, "offset": 0, "bytes_per_row": bytes_per_row,
-         "rows_per_image": rows_per_image},
+        {
+            "buffer": staging,
+            "offset": 0,
+            "bytes_per_row": padded,
+            "rows_per_image": rows_per_image,
+        },
         size,
     )
     self.submit([encoder.finish()])
     staging.map_sync("READ")
     try:
-        return memoryview(bytearray(staging.get_mapped_range(0, nbytes)))
+        mapped = staging.get_mapped_range(0, padded * rows)
+        if padded == stride and not offset:
+            return memoryview(bytearray(mapped))
+        out = memoryview(bytearray(offset + stride * rows))
+        for i in range(rows):
+            start = offset + i * stride
+            out[start : start + stride] = mapped[i * padded : i * padded + stride]
+        return out
     finally:
         staging.unmap()
         staging.destroy()

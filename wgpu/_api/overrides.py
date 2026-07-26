@@ -134,7 +134,10 @@ def binding_commands_set_bind_group(
         return self._c_set_bind_group(
             self._handle, index, bind_group._handle if bind_group else _NULL, 0, _NULL
         )
-    if dynamic_offsets_data_start is not None or dynamic_offsets_data_length is not None:
+    if (
+        dynamic_offsets_data_start is not None
+        or dynamic_offsets_data_length is not None
+    ):
         if dynamic_offsets_data_start is None or dynamic_offsets_data_length is None:
             raise ValueError(
                 "set_bind_group: pass both dynamic_offsets_data_start and "
@@ -236,6 +239,16 @@ def buffer_unmap(self):
     if not self._map_status[2]:
         raise RuntimeError("Cannot unmap a buffer that is not mapped.")
     self._map_status = (0, 0, 0)
+    # Release before unmapping: wgpu-native reclaims the memory these point
+    # at, and a released view raises where a dangling one would quietly read
+    # whatever landed there next. Views *derived* from these (slices) are not
+    # reached, which is a limitation of memoryview, not a choice.
+    views, self._mapped_views = self._mapped_views, []
+    for view in views:
+        try:
+            view.release()
+        except (BufferError, ValueError):
+            pass  # still exported, or already released
     return self._call("unmap")
 
 
@@ -250,6 +263,7 @@ def buffer_get_mapped_range(self, offset=0, size=None):
         # way, but writing into it would be discarded on unmap rather than
         # uploaded, so the view says so instead of failing quietly.
         view = view.toreadonly()
+    self._mapped_views.append(view)
     return view
 
 
@@ -268,14 +282,10 @@ def check_mapped_for(buffer, direction, offset, size):
     if not mode:
         raise RuntimeError(f"Can only {direction} a buffer while it is mapped.")
     if not mode & wanted:
-        raise RuntimeError(
-            f"Can only {direction} a buffer mapped in {direction} mode."
-        )
+        raise RuntimeError(f"Can only {direction} a buffer mapped in {direction} mode.")
     offset, size = _check_range(buffer, offset, size)
     if offset < start or (offset + size) > end:
-        raise ValueError(
-            "The range is not contained in the currently mapped range."
-        )
+        raise ValueError("The range is not contained in the currently mapped range.")
     return offset, size
 
 
@@ -299,9 +309,7 @@ def shader_module_get_compilation_info_sync(self):
     return []
 
 
-shader_module_get_compilation_info = deprecated_sync_or_async(
-    "get_compilation_info"
-)
+shader_module_get_compilation_info = deprecated_sync_or_async("get_compilation_info")
 
 
 def track_mapped_at_creation(generated_create_buffer):
@@ -351,6 +359,38 @@ def check_clear_range(generated_clear_buffer):
         return generated_clear_buffer(self, buffer, offset, size)
 
     return clear_buffer
+
+
+#: wgpu-native requires a texture-to-buffer copy's rows to be 256-byte aligned.
+_COPY_BYTES_PER_ROW_ALIGNMENT = 256
+
+
+def check_copy_alignment(generated_copy_texture_to_buffer):
+    """Wrap ``copy_texture_to_buffer`` to reject a bad destination up front.
+
+    Same reasoning as ``clear_buffer``: this records a command, so wgpu-native
+    would not object until ``finish()``. The alignment rule catches nearly
+    everyone once, and a ValueError naming the number is a far better answer
+    than a validation error arriving three calls later.
+    """
+    import functools
+
+    @functools.wraps(generated_copy_texture_to_buffer)
+    def copy_texture_to_buffer(self, source, destination, copy_size):
+        bytes_per_row = (destination or {}).get("bytes_per_row")
+        if bytes_per_row is not None:
+            bytes_per_row = int(bytes_per_row)
+            if bytes_per_row % _COPY_BYTES_PER_ROW_ALIGNMENT:
+                raise ValueError(
+                    f"bytes_per_row ({bytes_per_row}) must be a multiple of "
+                    f"{_COPY_BYTES_PER_ROW_ALIGNMENT}"
+                )
+        texture = (source or {}).get("texture")
+        if texture is not None and texture._spec_name == "texture_view":
+            raise ValueError("copy source must be a texture, not a texture view")
+        return generated_copy_texture_to_buffer(self, source, destination, copy_size)
+
+    return copy_texture_to_buffer
 
 
 #: The depth-stencil attachment keys that only apply when the attached texture

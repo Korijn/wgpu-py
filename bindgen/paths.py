@@ -51,11 +51,36 @@ def native_version() -> str:
     try:
         proc = subprocess.run(
             ["git", "describe", "--tags", "--always"],
-            cwd=NATIVE_ROOT, capture_output=True, text=True, timeout=30,
+            cwd=NATIVE_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
     except (OSError, subprocess.SubprocessError):
         return "unknown"
     return proc.stdout.strip().lstrip("v") or "unknown"
+
+
+def native_commit_sha() -> str:
+    """The wgpu-native commit this build is pinned to.
+
+    With the library statically linked into the extension there is no file to
+    inspect afterwards, so the exact commit is recorded at generation time --
+    it is the only way to tell two builds of the same tag apart.
+    """
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=NATIVE_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    return proc.stdout.strip() or "unknown"
 
 
 def static_lib_path(profile: str = "release") -> Path:

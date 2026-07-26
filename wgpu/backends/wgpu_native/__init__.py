@@ -30,6 +30,35 @@ def _wgpu_native_version() -> str:
 #: The version of wgpu-native this package was built against.
 __version__ = _wgpu_native_version()
 
-#: Kept for compatibility: wgpu-native is statically linked into the extension
-#: now, so there is no separate library file to point at.
-lib_path = None
+#: The same version as a tuple of four ints, e.g. ``(29, 0, 1, 1)``.
+version_info = tuple(
+    int(part) if part.isdigit() else 0 for part in (__version__.split(".") + ["0"] * 4)
+)[:4]
+
+#: The version of the library actually loaded. There is only one now -- it is
+#: compiled in -- so it cannot disagree with the expected version, which is
+#: exactly the failure mode the two-value comparison used to catch.
+lib_version_info = version_info
+
+
+def _commit_sha() -> str:
+    from wgpu._generated.constants import WGPU_NATIVE_COMMIT_SHA
+
+    return WGPU_NATIVE_COMMIT_SHA
+
+
+#: The wgpu-native commit compiled into this package, recorded when the
+#: bindings were generated: a static link leaves nothing to inspect afterwards.
+__commit_sha__ = _commit_sha()
+
+
+def _lib_path() -> str:
+    """Where the wgpu-native code actually lives: inside our own extension."""
+    from wgpu._native import _wgpu
+
+    return getattr(_wgpu, "__file__", "") or ""
+
+
+#: wgpu-native is statically linked into the compiled extension rather than
+#: loaded from a separate shared library, so this points at the extension.
+lib_path = _lib_path()

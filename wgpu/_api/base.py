@@ -53,6 +53,11 @@ class GPUObjectBase(Mixin):
         # because they sit in front of per-frame calls.
         "_warned_aspect_keys",
         "_cache",
+        # Memoryviews handed out over a buffer's mapped range. They point at
+        # memory wgpu-native reclaims on unmap, so they are released there --
+        # reading a released view raises, where reading freed memory would
+        # return plausible garbage or crash.
+        "_mapped_views",
         # A buffer's mapped range: (start, end, mode). wgpu-native does not
         # implement the getter, and the range has to be validated in Python
         # anyway, since passing a bad one to C aborts the process.
@@ -74,6 +79,7 @@ class GPUObjectBase(Mixin):
         self._warned_aspect_keys = None
         self._cache = {}
         self._map_status = (0, 0, 0)
+        self._mapped_views = []
 
     # -- identity ----------------------------------------------------------
 
@@ -91,9 +97,7 @@ class GPUObjectBase(Mixin):
         # The label is shown only when there is one, so the objects the spec
         # gives no label (adapters, and the info bags) read as plain objects.
         label = f" {self._label!r}" if self._label else ""
-        return (
-            f"<wgpu.{self.__class__.__name__} object{label} at {hex(id(self))}>"
-        )
+        return f"<wgpu.{self.__class__.__name__} object{label} at {hex(id(self))}>"
 
     @property
     def _device(self):
