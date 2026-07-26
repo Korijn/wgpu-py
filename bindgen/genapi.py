@@ -863,8 +863,13 @@ def _direct_body(b, spec_object, spec_method, params, binds, native) -> str | No
     if len(params) != len(args):
         return None
     parsed = [generate._parse_member_type(a["type"]) for a in args]
-    if any(is_array or kind not in DIRECT_ARG_KINDS for kind, _ref, is_array in parsed):
-        return None
+    for kind, _ref, is_array in parsed:
+        # An array of handles is one list comprehension; anything else in an
+        # array (structs, strings) needs the interpreted marshaller.
+        if is_array and kind != "object":
+            return None
+        if not is_array and kind not in DIRECT_ARG_KINDS:
+            return None
 
     ret = spec_method.get("returns")
     ret_kind, ret_ref = (None, None)
@@ -880,18 +885,29 @@ def _direct_body(b, spec_object, spec_method, params, binds, native) -> str | No
     binds.add(("func", c_func))
 
     exprs = []
-    for i, ((kind, ref, _), param, arg) in enumerate(zip(parsed, params, args)):
+    arrays = False
+    c_at = 1  # index into the C signature; 0 is the object handle
+    for (kind, ref, is_array), param, arg in zip(parsed, params, args):
         name = _ident(bridge.camel_to_snake(param.name))
         omittable = not param.required and (param.default or "").strip() in (
             None,
             "",
             "None",
         )
+        if is_array:
+            # One IDL parameter, two C ones: a count and a pointer.
+            arrays = True
+            binds.add(("null", None))
+            elem = ffi.getctype(c_sig[c_at + 1].item)
+            exprs.append(f"len(_a_{name})")
+            exprs.append(f'(_ffi.new("{elem}[]", _a_{name}) if _a_{name} else _NULL)')
+            c_at += 2
+            continue
         if kind == "prim":
             if omittable:
                 # An omitted size means "the rest of the resource"; C spells
                 # that as an all-ones sentinel of the parameter's own width.
-                width = ffi.sizeof(c_sig[i + 1]) * 8
+                width = ffi.sizeof(c_sig[c_at]) * 8
                 binds.add(("whole", width))
                 # A falsy size means "the rest of the resource" -- wgpu-py has
                 # always accepted 0 as well as None for this.
@@ -910,9 +926,25 @@ def _direct_body(b, spec_object, spec_method, params, binds, native) -> str | No
                 exprs.append(f"{name}._handle")
         else:  # pragma: no cover - guarded above
             return None
+        c_at += 1
 
     call = f"_c_{c_func}(self._handle{''.join(', ' + e for e in exprs)})"
-    return _return_expr(b, call, ret_kind, ret_ref, binds)
+    expr = _return_expr(b, call, ret_kind, ret_ref, binds)
+    if not arrays:
+        return expr
+    # A call that allocates is not in the zero-allocation hot class, so it can
+    # afford to report errors rather than defer them -- and submit() in
+    # particular is the boundary the deferred ones surface at.
+    binds.add(("errors", None))
+    lines = [
+        f"_a_{_ident(bridge.camel_to_snake(p.name))} = [_o._handle for _o in "
+        f"{_ident(bridge.camel_to_snake(p.name))}]"
+        for (_k, _r, is_array), p in zip(parsed, params)
+        if is_array
+    ]
+    lines.append(f"_r = {expr}")
+    lines.append("_raise_if_error()")
+    return lines, "_r"
 
 
 def _return_expr(b, call: str, ret_kind, ret_ref, binds, label: str = "") -> str:
@@ -1155,7 +1187,11 @@ def _emit_method(
         sig = ", ".join(sig_parts)
         passthrough = "".join(f", {n}" for n in names)
         if call is None and not is_async and binds is not None:
-            call = _direct_body(b, spec_object, spec_method, params, binds, native)
+            direct = _direct_body(b, spec_object, spec_method, params, binds, native)
+            if isinstance(direct, tuple):
+                prologue, call = direct
+            else:
+                call = direct
         if call is None:
             call = f"self._call({spec_method['name']!r}{passthrough})"
         decl = f"def {_ident(py)}(self{', ' + sig if sig else ''}) -> {ann}:"

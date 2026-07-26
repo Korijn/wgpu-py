@@ -53,6 +53,7 @@ _c_wgpuDeviceCreateSampler = _lib.wgpuDeviceCreateSampler
 _c_wgpuDeviceDestroy = _lib.wgpuDeviceDestroy
 _c_wgpuDevicePushErrorScope = _lib.wgpuDevicePushErrorScope
 _c_wgpuQuerySetDestroy = _lib.wgpuQuerySetDestroy
+_c_wgpuQueueSubmit = _lib.wgpuQueueSubmit
 _c_wgpuRenderBundleEncoderDraw = _lib.wgpuRenderBundleEncoderDraw
 _c_wgpuRenderBundleEncoderDrawIndexed = _lib.wgpuRenderBundleEncoderDrawIndexed
 _c_wgpuRenderBundleEncoderDrawIndexedIndirect = _lib.wgpuRenderBundleEncoderDrawIndexedIndirect
@@ -70,6 +71,7 @@ _c_wgpuRenderPassEncoderDrawIndexedIndirect = _lib.wgpuRenderPassEncoderDrawInde
 _c_wgpuRenderPassEncoderDrawIndirect = _lib.wgpuRenderPassEncoderDrawIndirect
 _c_wgpuRenderPassEncoderEnd = _lib.wgpuRenderPassEncoderEnd
 _c_wgpuRenderPassEncoderEndOcclusionQuery = _lib.wgpuRenderPassEncoderEndOcclusionQuery
+_c_wgpuRenderPassEncoderExecuteBundles = _lib.wgpuRenderPassEncoderExecuteBundles
 _c_wgpuRenderPassEncoderPopDebugGroup = _lib.wgpuRenderPassEncoderPopDebugGroup
 _c_wgpuRenderPassEncoderSetBindGroup = _lib.wgpuRenderPassEncoderSetBindGroup
 _c_wgpuRenderPassEncoderSetIndexBuffer = _lib.wgpuRenderPassEncoderSetIndexBuffer
@@ -512,7 +514,10 @@ class GPUQueue(GPUObjectBase):
 
     def submit(self, command_buffers: Sequence[GPUCommandBuffer]) -> None:
         """GPUQueue.submit -- see the WebGPU specification."""
-        return self._call('submit', command_buffers)
+        _a_command_buffers = [_o._handle for _o in command_buffers]
+        _r = _c_wgpuQueueSubmit(self._handle, len(_a_command_buffers), (_ffi.new("struct WGPUCommandBufferImpl *[]", _a_command_buffers) if _a_command_buffers else _NULL))
+        _raise_if_error()
+        return _r
 
     def on_submitted_work_done_async(self) -> None:
         """GPUQueue.onSubmittedWorkDone -- see the WebGPU specification."""
@@ -658,7 +663,10 @@ class GPURenderPassEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCo
 
     def execute_bundles(self, bundles: Sequence[GPURenderBundle]) -> None:
         """GPURenderPassEncoder.executeBundles -- see the WebGPU specification."""
-        return self._call('execute_bundles', bundles)
+        _a_bundles = [_o._handle for _o in bundles]
+        _r = _c_wgpuRenderPassEncoderExecuteBundles(self._handle, len(_a_bundles), (_ffi.new("struct WGPURenderBundleImpl *[]", _a_bundles) if _a_bundles else _NULL))
+        _raise_if_error()
+        return _r
 
     def end(self) -> None:
         """GPURenderPassEncoder.end -- see the WebGPU specification."""

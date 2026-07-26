@@ -111,3 +111,33 @@ def test_finish_still_reports_a_deferred_error(device):
     encoder.copy_buffer_to_buffer(src, 0, dst, 0, 64)
     with pytest.raises(wgpu.GPUError):
         encoder.finish()
+
+
+def test_submit_is_compiled(source):
+    body = source.split("def submit(")[1].split("def ")[0]
+    assert "_c_wgpuQueueSubmit" in body
+
+
+def test_submit_array_shapes(device):
+    """One IDL parameter becomes a C count plus pointer; empty means NULL."""
+    device.queue.submit([])
+    device.queue.submit([device.create_command_encoder().finish()])
+    device.queue.submit([device.create_command_encoder().finish() for _ in range(3)])
+    # Any sequence, not just a list -- the annotation says Sequence.
+    device.queue.submit(
+        tuple(device.create_command_encoder().finish() for _ in range(2))
+    )
+
+
+def test_submit_still_reports_errors(device):
+    """submit() allocates, so it checks rather than defers -- and it is the
+    boundary the genuinely deferred errors surface at."""
+    import wgpu
+
+    encoder = device.create_command_encoder()
+    cpass = encoder.begin_compute_pass()
+    # dispatch without a pipeline: a per-draw setter, so the error is deferred.
+    cpass.dispatch_workgroups(1)
+    cpass.end()
+    with pytest.raises(wgpu.GPUError):
+        device.queue.submit([encoder.finish()])
