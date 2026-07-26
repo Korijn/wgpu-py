@@ -242,7 +242,7 @@ STRUCTS['compute_state'] = StructDescriptor(
     members=(
         Member(py='module', c='module', kind='object', ref='shader_module', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='entry_point', c='entryPoint', kind='string', ref=None, pointer=None, optional=False, default=None, array=False, count_c=None),
-        Member(py='constants', c='constants', kind='struct', ref='constant_entry', pointer='immutable', optional=False, default=None, array=True, count_c='constantCount'),
+        Member(py='constants', c='constants', kind='struct', ref='constant_entry', pointer='immutable', optional=False, default={}, array=True, count_c='constantCount'),
     ),
 )
 
@@ -316,7 +316,7 @@ STRUCTS['fragment_state'] = StructDescriptor(
     members=(
         Member(py='module', c='module', kind='object', ref='shader_module', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='entry_point', c='entryPoint', kind='string', ref=None, pointer=None, optional=False, default=None, array=False, count_c=None),
-        Member(py='constants', c='constants', kind='struct', ref='constant_entry', pointer='immutable', optional=False, default=None, array=True, count_c='constantCount'),
+        Member(py='constants', c='constants', kind='struct', ref='constant_entry', pointer='immutable', optional=False, default={}, array=True, count_c='constantCount'),
         Member(py='targets', c='targets', kind='struct', ref='color_target_state', pointer='immutable', optional=False, default=None, array=True, count_c='targetCount'),
     ),
 )
@@ -543,9 +543,9 @@ STRUCTS['render_pipeline_descriptor'] = StructDescriptor(
         Member(py='label', c='label', kind='string', ref=None, pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='layout', c='layout', kind='object', ref='pipeline_layout', pointer=None, optional=True, default=None, array=False, count_c=None),
         Member(py='vertex', c='vertex', kind='struct', ref='vertex_state', pointer=None, optional=False, default=None, array=False, count_c=None),
-        Member(py='primitive', c='primitive', kind='struct', ref='primitive_state', pointer=None, optional=False, default=None, array=False, count_c=None),
+        Member(py='primitive', c='primitive', kind='struct', ref='primitive_state', pointer=None, optional=False, default={}, array=False, count_c=None),
         Member(py='depth_stencil', c='depthStencil', kind='struct', ref='depth_stencil_state', pointer='immutable', optional=True, default=None, array=False, count_c=None),
-        Member(py='multisample', c='multisample', kind='struct', ref='multisample_state', pointer=None, optional=False, default=None, array=False, count_c=None),
+        Member(py='multisample', c='multisample', kind='struct', ref='multisample_state', pointer=None, optional=False, default={}, array=False, count_c=None),
         Member(py='fragment', c='fragment', kind='struct', ref='fragment_state', pointer='immutable', optional=True, default=None, array=False, count_c=None),
     ),
 )
@@ -808,7 +808,7 @@ STRUCTS['texel_copy_texture_info'] = StructDescriptor(
     members=(
         Member(py='texture', c='texture', kind='object', ref='texture', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='mip_level', c='mipLevel', kind='prim', ref='uint32', pointer=None, optional=False, default=0, array=False, count_c=None),
-        Member(py='origin', c='origin', kind='struct', ref='origin_3D', pointer=None, optional=False, default=None, array=False, count_c=None),
+        Member(py='origin', c='origin', kind='struct', ref='origin_3D', pointer=None, optional=False, default={}, array=False, count_c=None),
         Member(py='aspect', c='aspect', kind='enum', ref='texture_aspect', pointer=None, optional=False, default=1, array=False, count_c=None),
     ),
 )
@@ -911,7 +911,7 @@ STRUCTS['vertex_state'] = StructDescriptor(
     members=(
         Member(py='module', c='module', kind='object', ref='shader_module', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='entry_point', c='entryPoint', kind='string', ref=None, pointer=None, optional=False, default=None, array=False, count_c=None),
-        Member(py='constants', c='constants', kind='struct', ref='constant_entry', pointer='immutable', optional=False, default=None, array=True, count_c='constantCount'),
+        Member(py='constants', c='constants', kind='struct', ref='constant_entry', pointer='immutable', optional=False, default={}, array=True, count_c='constantCount'),
         Member(py='buffers', c='buffers', kind='struct', ref='vertex_buffer_layout', pointer='immutable', optional=False, default=None, array=True, count_c='bufferCount'),
     ),
 )

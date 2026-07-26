@@ -135,13 +135,7 @@ class StructBuilder:
             if value is _MISSING:
                 value = self._default(mem)
                 if value is _MISSING:
-                    if mem.kind == "struct" and not mem.pointer and not mem.array:
-                        # A struct embedded by value still has to be built when
-                        # it is omitted, or its own defaults never apply -- an
-                        # omitted multisample state would leave count at 0.
-                        value = {}
-                    else:
-                        continue  # leave zero / NULL
+                    continue  # leave zero / NULL
             self._set_member(ptr, mem, value, keep)
 
     def _set_member(self, ptr, mem, value, keep: list):
@@ -283,6 +277,8 @@ class StructBuilder:
         d = mem.default
         if d is None:
             return _MISSING
+        if isinstance(d, dict):
+            return d  # a nested struct the spec says to build from its defaults
         if isinstance(d, (bool, int, float)):
             return d
         if isinstance(d, str):

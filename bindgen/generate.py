@@ -164,7 +164,14 @@ def _resolve_default(mem, kind, ref, lib, idl_default=None):
     if default is None and idl_default is not None:
         # The IDL spells enum defaults as quoted web strings ("uniform"); the
         # C-side value is looked up through the same table the runtime uses.
-        value = idl_default.strip().strip('"')
+        value = idl_default.strip()
+        if value == "{}":
+            # The IDL marks a nested struct that must be built even when
+            # omitted, so its own defaults apply -- multisample state defaults
+            # to {} and thus to count 1, while a binding layout's sampler has
+            # no default and must stay unset.
+            return {} if kind == "struct" else None
+        value = value.strip('"')
         if kind == "enum":
             from wgpu._generated import apienums  # noqa: PLC0415
 
