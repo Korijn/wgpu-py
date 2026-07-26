@@ -86,6 +86,33 @@ def _native_features(lib) -> list[tuple[str, int]]:
     return out
 
 
+#: The member set that makes an enum a tri-state boolean rather than an enum.
+_TRISTATE_BOOL = frozenset({"false", "true", "undefined"})
+
+
+def _tristate_bool_aliases(pairs: list[tuple[str, int]]) -> list[str]:
+    """Extra map entries for a C enum that is really an optional boolean.
+
+    ``WGPUOptionalBool`` is spelled as an enum in C, but the Web IDL types the
+    members it backs (``depthWriteEnabled``) as ``boolean`` -- so callers pass
+    ``True``/``False``, and ``None`` for "not specified". Rather than name that
+    enum here, it is recognised by its shape: any enum whose members are
+    exactly false/true/undefined admits the same three Python values.
+
+    The string spellings stay, so the C-level name still works, and only these
+    aliases are non-``str`` keys -- which is why ``FROM_INT`` can filter them
+    back out and keep one integer per name.
+    """
+    by_name = dict(pairs)
+    if set(by_name) != _TRISTATE_BOOL:
+        return []
+    return [
+        f"    True: {by_name['true']},",
+        f"    False: {by_name['false']},",
+        f"    None: {by_name['undefined']},",
+    ]
+
+
 def generate_api_enums(b: bridge.Bridge, lib) -> str:
     """Emit the string-valued enums plus their string -> C-integer maps.
 
@@ -158,6 +185,7 @@ def generate_api_enums(b: bridge.Bridge, lib) -> str:
             pairs.append((value, c_int))
         lines.append(f"TO_INT[{spec_name!r}] = _EnumMap({idl_name!r}, {{")
         lines += [f"    {v!r}: {i}," for v, i in pairs]
+        lines += _tristate_bool_aliases(pairs)
         lines.append("})")
         lines.append("")
 
@@ -194,6 +222,7 @@ def generate_api_enums(b: bridge.Bridge, lib) -> str:
             if v not in seen:
                 seen.add(v)
                 lines.append(f"    {v!r}: {i},")
+        lines += _tristate_bool_aliases(pairs)
         lines.append("})")
         lines.append("")
 
@@ -408,7 +437,6 @@ HAND_WRITTEN_ATTRS = {
     ("GPUDevice", "onuncapturederror"),
     ("GPUBuffer", "mapState"),
     ("GPUTexture", "textureBindingViewDimension"),
-    ("GPUTextureView", "texture"),
     ("GPUCompilationInfo", "messages"),
 }
 
@@ -493,6 +521,33 @@ def _method_doc(cls: str, name: str, kind: str) -> str:
     return f"{cls}.{name} ({kind})"
 
 
+def _check_hooks_are_live(b: bridge.Bridge) -> None:
+    """Fail the build if a hand-written hook names something the IDL dropped.
+
+    ``HAND_WRITTEN`` and ``HAND_WRITTEN_ATTRS`` only *suppress* generation --
+    an entry naming a member the IDL no longer has suppresses nothing, and the
+    hand-written replacement is then never attached to anything. That went
+    unnoticed once (``GPUTextureView.texture``, which the IDL does not declare
+    at all), so the mismatch is an error rather than a silent no-op. A wgpu-py
+    addition with no IDL counterpart belongs in ``wgpu._api.__init__``, where
+    the additions are attached explicitly and can be read off in one place.
+    """
+    stale = []
+    for cls_name, member in sorted(HAND_WRITTEN_ATTRS):
+        interface = b.idl.classes.get(cls_name)
+        if interface is None or member not in interface.attributes:
+            stale.append(f"HAND_WRITTEN_ATTRS: {cls_name}.{member}")
+    for cls_name, member in sorted(HAND_WRITTEN):
+        interface = b.idl.classes.get(cls_name)
+        if interface is None or member not in interface.functions:
+            stale.append(f"HAND_WRITTEN: {cls_name}.{member}()")
+    if stale:
+        raise RuntimeError(
+            "hand-written hooks that match nothing in the Web IDL:\n  "
+            + "\n  ".join(stale)
+        )
+
+
 def generate_api_classes(b: bridge.Bridge, spec: dict, native=None) -> str:
     """Emit the public ``GPU*`` classes with real WebGPU signatures.
 
@@ -507,6 +562,7 @@ def generate_api_classes(b: bridge.Bridge, spec: dict, native=None) -> str:
     objects = {o["name"]: o for o in spec["objects"]}
     binds: set = set()
     names = [n for n in sorted(b.idl.classes) if n not in PYTHON_SIDE_CLASSES]
+    _check_hooks_are_live(b)
 
     body: list[str] = []
     for cls_name in _in_dependency_order(b, names):
@@ -566,6 +622,8 @@ def _emit_bindings(binds: set) -> list[str]:
         lines.append("_NULL = _ffi.NULL")
     if "errors" in kinds:
         lines.append("from wgpu._api.base import raise_if_error as _raise_if_error")
+    if "strlen" in kinds:
+        lines.append("from wgpu._generated.constants import strlen as _STRLEN")
     if "handle" in kinds:
         lines.append("")
         lines.append("def _handle(obj):")
@@ -1024,6 +1082,10 @@ def _compiled_descriptor_body(b, spec_object, spec_method, idl_struct, binds, na
         given = mem.py in params
         if not given:
             # No public keyword sets this member; only a constant default can.
+            if mem.kind == "string":
+                binds.add(("strlen", None))
+                lines.append(f"_d.{mem.c}.length = _STRLEN")
+                continue
             literal = _default_literal(mem.default)
             if literal is not None:
                 lines.append(f"_d.{mem.c} = {literal}")
@@ -1033,13 +1095,18 @@ def _compiled_descriptor_body(b, spec_object, spec_method, idl_struct, binds, na
         # does for the interpreted builder -- so it falls back the same way.
         fallback = _default_literal(mem.default)
         if mem.kind == "string":
-            # Falsy label -> leave the zeroed StringView, which is the empty
-            # string. cffi's char[] is NUL-terminated, hence the -1.
+            # cffi's char[] is NUL-terminated, hence the -1. A zeroed
+            # StringView is `{NULL, 0}`, which C reads as the *empty string*,
+            # so "not specified" has to be written out as `{NULL, STRLEN}` --
+            # the same distinction the interpreted builder makes.
+            binds.add(("strlen", None))
             lines += [
-                f"if {name}:",
+                f"if {name} is not None:",
                 f'    _s_{name} = _ffi.new("char[]", {name}.encode())',
                 f"    _d.{mem.c}.data = _s_{name}",
                 f"    _d.{mem.c}.length = len(_s_{name}) - 1",
+                "else:",
+                f"    _d.{mem.c}.length = _STRLEN",
             ]
             continue
         if mem.kind == "enum":

@@ -12,6 +12,24 @@ wgpu-py API did: an already-resolved integer passes through, and flags accept
 
 from __future__ import annotations
 
+from wgpu._runtime.errors import InvalidValueError
+
+
+def spec_spelling(key: str) -> str:
+    """``vertex_writable_storage`` / ``VertexWritableStorage`` -> hyphenated.
+
+    One rule covers the three spellings wgpu-py has always accepted for the
+    same name: the spec's own ``hyphen-case``, the ``snake_case`` that reads
+    naturally in Python, and the ``CamelCase`` that matches wgpu-native's own
+    header. Only reached on a miss, so the common path never pays for it.
+    """
+    out = []
+    for i, ch in enumerate(key):
+        if ch.isupper() and i and key[i - 1] not in "_-":
+            out.append("-")
+        out.append(ch.lower())
+    return "".join(out).replace("_", "-")
+
 
 class EnumMap(dict):
     """Maps a WebGPU enum string (or a raw int) to its C integer."""
@@ -25,15 +43,18 @@ class EnumMap(dict):
     def __missing__(self, key):
         if isinstance(key, int) and not isinstance(key, bool):
             return key  # already a C value
-        if isinstance(key, str) and "_" in key:
-            # wgpu-py has always taken "vertex_writable_storage" for the spec's
-            # "vertex-writable-storage". Cached so it only converts once.
-            hyphenated = key.replace("_", "-")
+        if isinstance(key, str):
+            # wgpu-py has always taken "vertex_writable_storage" and
+            # "VertexWritableStorage" for the spec's "vertex-writable-storage".
+            # Cached under the original spelling, so it converts only once.
+            hyphenated = spec_spelling(key)
             if dict.__contains__(self, hyphenated):
-                value = self[hyphenated] = dict.__getitem__(self, hyphenated)
+                value = self[key] = dict.__getitem__(self, hyphenated)
                 return value
         options = ", ".join(repr(k) for k in self if isinstance(k, str))
-        raise ValueError(f"Invalid value for {self.name}: {key!r}. Expected {options}.")
+        raise InvalidValueError(
+            f"Invalid value for {self.name}: {key!r}. Expected {options}."
+        )
 
 
 class FlagMap(dict):
@@ -64,8 +85,10 @@ class FlagMap(dict):
                 # through __missing__ and recurse on an unknown name.
                 one = dict.get(self, part.upper())
                 if one is None:
-                    raise ValueError(f"Invalid flag for {self.name}: {part!r}")
+                    raise InvalidValueError(
+                        f"Invalid flag for {self.name}: {part!r}"
+                    )
                 value |= one
             self._cache[key] = value
             return value
-        raise ValueError(f"Invalid value for {self.name}: {key!r}")
+        raise InvalidValueError(f"Invalid value for {self.name}: {key!r}")

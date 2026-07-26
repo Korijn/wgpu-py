@@ -24,6 +24,7 @@ from wgpu._generated.apiclasses import *  # noqa: F403
 from wgpu._generated.apiclasses import (
     GPUAdapter,
     GPUBuffer,
+    GPUCommandEncoder,
     GPUDevice,
     GPUObjectBase,
     GPUQueue,
@@ -44,6 +45,9 @@ from wgpu._runtime.errors import (
 # -- wgpu-py additions to the WebGPU API -------------------------------------
 
 GPUDevice.create_buffer = _ov.track_mapped_at_creation(GPUDevice.create_buffer)
+GPUCommandEncoder.begin_render_pass = _ov.drop_inapplicable_aspect_ops(
+    GPUCommandEncoder.begin_render_pass
+)
 GPUBuffer.read_mapped = _x.buffer_read_mapped
 GPUBuffer.write_mapped = _x.buffer_write_mapped
 GPUDevice.create_buffer_with_data = _x.device_create_buffer_with_data
@@ -53,6 +57,7 @@ GPUQueue.read_texture = _x.queue_read_texture
 GPUAdapter.summary = _x.adapter_summary
 GPUTexture.size = _x.texture_size
 GPUTextureView.size = _x.texture_view_size
+GPUTextureView.texture = _x.texture_view_texture
 
 __all__ = [
     *_generated_all,

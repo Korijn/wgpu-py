@@ -139,6 +139,16 @@ def texture_size(self):
 
 
 @property
+def texture_view_texture(self):
+    """The texture this view was created from.
+
+    Not in the Web IDL, which gives ``GPUTextureView`` no attributes at all.
+    The view holds its texture as its parent regardless, to keep it alive.
+    """
+    return self._parent
+
+
+@property
 def texture_view_size(self):
     """The size of the texture this view was created from."""
     return self._parent.size

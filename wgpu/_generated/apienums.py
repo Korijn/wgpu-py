@@ -1010,6 +1010,9 @@ TO_INT['optional_bool'] = _EnumMap('optional_bool', {
     'false': 0,
     'true': 1,
     'undefined': 2,
+    True: 1,
+    False: 0,
+    None: 2,
 })
 
 TO_INT['pop_error_scope_status'] = _EnumMap('pop_error_scope_status', {

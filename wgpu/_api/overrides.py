@@ -71,12 +71,6 @@ def device_adapter_info(self):
 
 
 @property
-def texture_view_texture(self):
-    """The texture this view was created from."""
-    return self._parent
-
-
-@property
 def texture_texture_binding_view_dimension(self):
     """The view dimension this texture is bound as, if it was pinned."""
     return self._binding_view_dimension
@@ -292,3 +286,59 @@ def track_mapped_at_creation(generated_create_buffer):
         return buffer
 
     return create_buffer
+
+
+#: The depth-stencil attachment keys that only apply when the attached texture
+#: actually has that aspect, and it is not read-only.
+_ASPECT_KEYS = {
+    "depth": ("depth_load_op", "depth_store_op", "depth_clear_value"),
+    "stencil": ("stencil_load_op", "stencil_store_op", "stencil_clear_value"),
+}
+
+
+def drop_inapplicable_aspect_ops(generated_begin_render_pass):
+    """Wrap ``begin_render_pass`` to drop ops the attachment has no aspect for.
+
+    By the spec, ``stencil_load_op``/``stencil_store_op`` are only allowed when
+    the depth-stencil texture has a stencil aspect that is not read-only, and
+    likewise for depth. wgpu-py used to *require* all four regardless, so a lot
+    of existing code passes them unconditionally and would now fail validation.
+
+    Those keys are therefore dropped rather than forwarded, and saying so is a
+    warning rather than an error -- once per device per key, because this sits
+    in front of a per-frame call and a warning every frame is just noise. The
+    read-only flags stay, since they are what makes the aspect inapplicable.
+    """
+    import functools
+
+    @functools.wraps(generated_begin_render_pass)
+    def begin_render_pass(self, *, depth_stencil_attachment=None, **kwargs):
+        if depth_stencil_attachment:
+            depth_stencil_attachment = _prune_aspect_ops(
+                self._device, dict(depth_stencil_attachment)
+            )
+        return generated_begin_render_pass(
+            self, depth_stencil_attachment=depth_stencil_attachment, **kwargs
+        )
+
+    return begin_render_pass
+
+
+def _prune_aspect_ops(device, attachment: dict) -> dict:
+    # Every depth format has "depth" in its name and every stencil format has
+    # "stencil" in its name, so the format string answers this directly.
+    view = attachment.get("view")
+    format = getattr(getattr(view, "texture", None), "format", "") or ""
+    warned = device._warned_aspect_keys if device is not None else None
+    if warned is None and device is not None:
+        warned = device._warned_aspect_keys = set()
+    for aspect, keys in _ASPECT_KEYS.items():
+        if aspect in format and not attachment.get(f"{aspect}_read_only", False):
+            continue
+        for key in keys:
+            if attachment.pop(key, None) is None:
+                continue
+            if warned is not None and key not in warned:
+                warned.add(key)
+                logger.warning(f"Unexpected key {key} in depth_stencil_attachment")
+    return attachment

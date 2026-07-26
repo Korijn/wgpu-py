@@ -30,6 +30,9 @@ class StructBuilder:
         self.ffi = ffi
         self.structs = structs
         self.constants = constants
+        # webgpu.h: a WGPUStringView of `{NULL, WGPU_STRLEN}` is the null value,
+        # while `{any, 0}` -- what zeroed memory gives -- is the *empty string*.
+        self._strlen = constants.strlen
         # Public value maps: strings in, C integers out (and back again).
         self.enums = enums
         self.flags = flags
@@ -133,9 +136,11 @@ class StructBuilder:
                     mapping[normalised] = mapping.pop(key)
             unknown = set(mapping) - known
         if unknown:
-            # ValueError, not TypeError: this is a bad value in a struct, and
-            # it is what wgpu-py has always raised for an unknown field.
-            raise ValueError(f"{desc.c_name}: unexpected fields {sorted(unknown)}")
+            from wgpu._runtime.errors import InvalidValueError
+
+            raise InvalidValueError(
+                f"{desc.c_name}: unexpected fields {sorted(unknown)}"
+            )
         for mem in desc.members:
             value = mapping.get(mem.py, _MISSING)
             if value is None:
@@ -145,7 +150,12 @@ class StructBuilder:
             if value is _MISSING:
                 value = self._default(mem)
                 if value is _MISSING:
-                    continue  # leave zero / NULL
+                    if mem.kind == "string":
+                        # Zero is the empty string here, not "not specified", so
+                        # an unset member has to be written rather than left
+                        # alone -- see ``_set_string``.
+                        getattr(ptr, mem.c).length = self._strlen
+                    continue  # otherwise leave zero / NULL
             self._set_member(ptr, mem, value, keep)
 
     def _set_member(self, ptr, mem, value, keep: list):
@@ -213,9 +223,17 @@ class StructBuilder:
         return getattr(value, "_handle", value)
 
     def _set_string(self, view, value, keep: list):
+        """Fill a ``WGPUStringView``.
+
+        The encoding is spelled out in webgpu.h: ``{NULL, WGPU_STRLEN}`` is the
+        null value and ``{any, 0}`` is the empty string. The two are not
+        interchangeable -- an entry point of ``""`` makes wgpu-native look for
+        an entry point *named* the empty string, where null makes it use the
+        module's only one.
+        """
         if value is None:
             view.data = self.ffi.NULL
-            view.length = 0
+            view.length = self._strlen
             return
         data = self.ffi.new("char[]", value.encode("utf-8"))
         keep.append(data)

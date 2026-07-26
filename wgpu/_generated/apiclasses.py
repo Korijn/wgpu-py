@@ -24,6 +24,7 @@ from wgpu._native import ffi as _ffi, lib as _lib
 
 _NULL = _ffi.NULL
 from wgpu._api.base import raise_if_error as _raise_if_error
+from wgpu._generated.constants import strlen as _STRLEN
 _WHOLE64 = 18446744073709551615
 _E_address_mode = enums.TO_INT['address_mode']
 _E_compare_function = enums.TO_INT['compare_function']
@@ -265,10 +266,12 @@ class GPUCommandEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUObjectBase):
     def finish(self, *, label: str = "") -> GPUCommandBuffer:
         """GPUCommandEncoder.finish -- see the WebGPU specification."""
         _d = _ffi.new("WGPUCommandBufferDescriptor *")
-        if label:
+        if label is not None:
             _s_label = _ffi.new("char[]", label.encode())
             _d.label.data = _s_label
             _d.label.length = len(_s_label) - 1
+        else:
+            _d.label.length = _STRLEN
         _r = _new_object(GPUCommandBuffer, _c_wgpuCommandEncoderFinish(self._handle, _d), self, label)
         _raise_if_error()
         return _r
@@ -337,10 +340,12 @@ class GPUDevice(GPUObjectBase):
     def create_buffer(self, *, label: str = "", size: int, usage: flags.BufferUsageFlags, mapped_at_creation: bool = False) -> GPUBuffer:
         """GPUDevice.createBuffer -- see the WebGPU specification."""
         _d = _ffi.new("WGPUBufferDescriptor *")
-        if label:
+        if label is not None:
             _s_label = _ffi.new("char[]", label.encode())
             _d.label.data = _s_label
             _d.label.length = len(_s_label) - 1
+        else:
+            _d.label.length = _STRLEN
         if usage is not None:
             _d.usage = _F_buffer_usage[usage]
         if size is not None:
@@ -358,10 +363,12 @@ class GPUDevice(GPUObjectBase):
     def create_sampler(self, *, label: str = "", address_mode_u: enums.AddressModeEnum = "clamp-to-edge", address_mode_v: enums.AddressModeEnum = "clamp-to-edge", address_mode_w: enums.AddressModeEnum = "clamp-to-edge", mag_filter: enums.FilterModeEnum = "nearest", min_filter: enums.FilterModeEnum = "nearest", mipmap_filter: enums.MipmapFilterModeEnum = "nearest", lod_min_clamp: float = 0, lod_max_clamp: float = 32, compare: enums.CompareFunctionEnum | None = None, max_anisotropy: int = 1) -> GPUSampler:
         """GPUDevice.createSampler -- see the WebGPU specification."""
         _d = _ffi.new("WGPUSamplerDescriptor *")
-        if label:
+        if label is not None:
             _s_label = _ffi.new("char[]", label.encode())
             _d.label.data = _s_label
             _d.label.length = len(_s_label) - 1
+        else:
+            _d.label.length = _STRLEN
         if address_mode_u is not None:
             _d.addressModeU = _E_address_mode[address_mode_u]
         if address_mode_v is not None:
@@ -425,10 +432,12 @@ class GPUDevice(GPUObjectBase):
     def create_command_encoder(self, *, label: str = "") -> GPUCommandEncoder:
         """GPUDevice.createCommandEncoder -- see the WebGPU specification."""
         _d = _ffi.new("WGPUCommandEncoderDescriptor *")
-        if label:
+        if label is not None:
             _s_label = _ffi.new("char[]", label.encode())
             _d.label.data = _s_label
             _d.label.length = len(_s_label) - 1
+        else:
+            _d.label.length = _STRLEN
         _r = _new_object(GPUCommandEncoder, _c_wgpuDeviceCreateCommandEncoder(self._handle, _d), self, label)
         _raise_if_error()
         return _r
@@ -440,10 +449,12 @@ class GPUDevice(GPUObjectBase):
     def create_query_set(self, *, label: str = "", type: enums.QueryTypeEnum, count: int) -> GPUQuerySet:
         """GPUDevice.createQuerySet -- see the WebGPU specification."""
         _d = _ffi.new("WGPUQuerySetDescriptor *")
-        if label:
+        if label is not None:
             _s_label = _ffi.new("char[]", label.encode())
             _d.label.data = _s_label
             _d.label.length = len(_s_label) - 1
+        else:
+            _d.label.length = _STRLEN
         if type is not None:
             _d.type = _E_query_type[type]
         if count is not None:
@@ -589,10 +600,12 @@ class GPURenderBundleEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBinding
     def finish(self, *, label: str = "") -> GPURenderBundle:
         """GPURenderBundleEncoder.finish -- see the WebGPU specification."""
         _d = _ffi.new("WGPURenderBundleDescriptor *")
-        if label:
+        if label is not None:
             _s_label = _ffi.new("char[]", label.encode())
             _d.label.data = _s_label
             _d.label.length = len(_s_label) - 1
+        else:
+            _d.label.length = _STRLEN
         _r = _new_object(GPURenderBundle, _c_wgpuRenderBundleEncoderFinish(self._handle, _d), self, label)
         _raise_if_error()
         return _r

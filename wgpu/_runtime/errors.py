@@ -17,6 +17,23 @@ import logging
 logger = logging.getLogger("wgpu")
 
 
+class InvalidValueError(ValueError, KeyError):
+    """An enum value, flag name or struct field that the API does not know.
+
+    Both base classes are load-bearing rather than decorative. wgpu-py has
+    always resolved these names by indexing a dict, so a wrong one surfaced as
+    ``KeyError`` and existing code catches that; but the value is also simply
+    invalid, which is what ``ValueError`` says, and it is the spelling the rest
+    of this package raises. Inheriting from both means neither ``except``
+    clause has to be rewritten to keep working.
+    """
+
+    # ``KeyError`` renders its message with ``repr``, which puts quotes around
+    # a multi-line explanation and makes it far harder to read. These messages
+    # are prose, so they print as prose.
+    __str__ = Exception.__str__
+
+
 class GPUError(Exception):
     """Base class for errors reported by wgpu-native."""
 

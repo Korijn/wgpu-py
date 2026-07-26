@@ -49,6 +49,9 @@ class GPUObjectBase(Mixin):
         "_lost_promise",
         "_uncaptured_error_handler",
         "_binding_view_dimension",
+        # Warnings that are issued once per device rather than once per call,
+        # because they sit in front of per-frame calls.
+        "_warned_aspect_keys",
         "_cache",
         # A buffer's mapped range: (start, end, mode). wgpu-native does not
         # implement the getter, and the range has to be validated in Python
@@ -68,6 +71,7 @@ class GPUObjectBase(Mixin):
         self._lost_promise = None
         self._uncaptured_error_handler = None
         self._binding_view_dimension = None
+        self._warned_aspect_keys = None
         self._cache = {}
         self._map_status = (0, 0, 0)
 
@@ -85,6 +89,23 @@ class GPUObjectBase(Mixin):
 
     def __repr__(self):
         return f"<wgpu.{self.__class__.__name__} {self._label!r} at {hex(id(self))}>"
+
+    @property
+    def _device(self):
+        """The device this object ultimately came from, or ``None``.
+
+        Every handle is created either by a device or by something a device
+        created, and each one keeps its creator as ``_parent`` to hold it
+        alive -- so the device is always reachable by walking up. wgpu-py has
+        exposed this since the beginning, and per-device state (the
+        once-per-device warnings, for one) needs somewhere to live.
+        """
+        obj = self
+        while obj is not None:
+            if obj._spec_name == "device":
+                return obj
+            obj = obj._parent
+        return None
 
     # -- dispatch ----------------------------------------------------------
     #
