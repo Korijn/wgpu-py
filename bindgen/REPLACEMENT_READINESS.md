@@ -87,19 +87,22 @@ differs. Best of three runs each (`python -m bindgen.tests.benchmark`).
 | create_buffer | 9.65 us | **3.72 us** | **2.6x faster** |
 | dispatch_workgroups | 1.37 us | **0.68 us** | **2.0x faster** |
 | record_pass | 65.2 us | **53.9 us** | **1.2x faster** |
+| write_buffer | 6.46 us | **3.09 us** | **2.1x faster** |
 | create_bind_group_layout | 19.6 us | **15.7 us** | **1.25x faster** |
-| write_buffer | 6.46 us | 8.93 us | 1.38x slower |
-| property reads | 0.083 us | 0.162 us | 1.94x slower |
+| property reads | 0.083 us | **0.075 us** | **1.1x faster** |
 
-The hot path -- the calls a frame makes thousands of times -- is where the win
-is. Startup is 12x because the library is statically linked: no download, no
+**Every case is now faster than the implementation it replaces.** The hot path
+-- the calls a frame makes thousands of times -- is where the win is biggest.
+Startup is 12x because the library is statically linked: no download, no
 runtime version probe, far less import work.
 
-`create_bind_group_layout` was the one case still slower than classic, because
-it takes an array of structs and so marshals its descriptor at runtime. It is
-now the *interpreted* path that got faster -- see "What the interpreted builder
-was redoing" below -- which is why it is the one row measured on a later run
-than the rest of the table.
+The last three rows were the ones classic still won, and each had a different
+cause. `create_bind_group_layout` takes an array of structs, so it marshals its
+descriptor at runtime; the interpreted builder stopped redoing per-descriptor
+work (see below). `write_buffer` had no reason to be on the interpreted path at
+all -- every argument is one C takes as-is -- and now compiles to a direct
+call like the per-draw setters. Property reads were a method call and a dict
+lookup; they are now a slot load.
 
 ### How the hot path got there
 
@@ -143,9 +146,30 @@ check: the compiled descriptor bodies and the array calls report errors
 immediately. That keeps `finish()` and `submit()` as the boundaries the
 genuinely deferred errors surface at, which the rest of the API relies on.
 
-The cases still slower than classic are cold or mid paths that run once per
-resource rather than once per draw: `write_buffer`, and cached property reads
-(a dict lookup rather than a plain attribute, 0.08 us each).
+### Raw data, and the properties a frame reads
+
+Two more shapes came off the interpreted path once the descriptors had.
+
+**Queue writes.** `writeBuffer` takes a buffer, an offset and raw bytes -- all
+things C takes as-is -- yet it went through the general marshaller, which
+re-derived the same four conversions on every call. It shares its shape with
+`writeTexture` and `setImmediates`, which is why the emitter handles the shape
+rather than the method; `writeTexture` takes structs, so it still falls back to
+the general path, and that is *derived* from its C signature rather than named.
+The window semantics are unchanged: `(dataOffset, size)` still slices before
+the pointer is taken.
+
+**Immutable properties.** A buffer's size and a texture's format are fixed by
+the descriptor they were made from, so they were already read from C only once
+-- but the caching cost a method call and a dict lookup on every read, in
+render loops that do nothing else. Each now caches into a slot of its own, and
+an unset slot raises `AttributeError`, which *is* the "not yet" branch. That
+made a second thing possible: the generated classes had no `__slots__` at all,
+so every base's careful slot list was undone by the leaf and every GPU object
+carried a `__dict__`. They declare them now, which measures at **514 -> 310
+bytes per object** and turns a typo'd attribute into an error rather than a
+silently ignored assignment. Mutable properties (`map_state`) are untouched
+and still ask C every time.
 
 ### What the interpreted builder was redoing
 
@@ -447,12 +471,15 @@ that it had already answered itself:
   by generating more source. The reasoning, and why the generator route was
   rejected, is under "What the interpreted builder was redoing" above.
 
-What remains is genuinely open rather than deferred:
+`write_buffer` and property reads, the two cases that were still behind
+classic, have since been closed as well -- see "Raw data, and the properties a
+frame reads" above. No benchmark case is now slower than the implementation
+this replaces.
 
-1. `write_buffer` (1.38x slower than classic) and cached property reads
-   (1.94x) are the last cases behind the old implementation.
-2. The structural wins are still the ones listed under "What would push it
-   further": render bundles, `multi_draw_indirect`, batched setters.
+What remains is genuinely open rather than deferred: the structural wins listed
+under "What would push it further" -- render bundles, `multi_draw_indirect`,
+batched setters. Those stop making one Python call per GPU command, which is
+the only order of magnitude left; per-call tuning is done.
 
 wgpu-native's own extension structs (`WGPUShaderSourceGLSL` and the `*Extras`
 family) are declared only in `wgpu.h`, so they cannot come from `webgpu.json`.

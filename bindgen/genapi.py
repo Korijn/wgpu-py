@@ -700,6 +700,16 @@ def _emit_class(
         bases = ["Mixin"] if cls_name in MIXIN_REPRESENTATIVE else ["GPUHandle"]
     lines = ["", "", f"class {cls_name}({', '.join(bases)}):"]
     lines.append(f'    """{cls_name} -- see the WebGPU specification."""')
+    # Every base declares __slots__; a subclass that does not would hand each
+    # instance a __dict__ back and undo all of it. The slots named here back
+    # the immutable properties below, which cache into them.
+    cached = sorted(
+        f"_c_{bridge.camel_to_snake(attr)}"
+        for attr in interface.attributes
+        if (cls_name, attr) in IMMUTABLE_ATTRS
+        and (cls_name, attr) not in HAND_WRITTEN_ATTRS
+    )
+    lines.append(f"    __slots__ = {tuple(cached)!r}")
     # A mixin has no object of its own; dispatch uses the instance's.
     if spec_object and cls_name not in MIXIN_REPRESENTATIVE:
         lines.append(f"    _spec_name = {spec_object!r}")
@@ -854,12 +864,27 @@ def _emit_attr(b, cls_name, attr_name, spec_methods) -> list[str]:
     line = b.idl.classes[cls_name].attributes[attr_name]
     typename = line.partition("attribute")[2].strip().rsplit(" ", 1)[0]
     ann = _annotate(b.idl, typename)
-    fetch = "_get_cached" if (cls_name, attr_name) in IMMUTABLE_ATTRS else "_get"
+    if (cls_name, attr_name) not in IMMUTABLE_ATTRS:
+        return [
+            "    @property",
+            f"    def {_ident(py)}(self) -> {ann}:",
+            f'        """{cls_name}.{attr_name}"""',
+            f"        return self._get({getter!r})",
+            "",
+        ]
+    # Fixed by the descriptor the object was made from, so it is read from C
+    # once and kept in a slot of its own. Render loops read these constantly,
+    # and an unset slot raises AttributeError, which is the "not yet" branch --
+    # so the common case is a slot load and nothing else.
     return [
         "    @property",
         f"    def {_ident(py)}(self) -> {ann}:",
         f'        """{cls_name}.{attr_name}"""',
-        f"        return self.{fetch}({getter!r})",
+        "        try:",
+        f"            return self._c_{py}",
+        "        except AttributeError:",
+        f"            value = self._c_{py} = self._get({getter!r})",
+        "            return value",
         "",
     ]
 
@@ -869,7 +894,9 @@ def _emit_attr(b, cls_name, attr_name, spec_methods) -> list[str]:
 _WINDOW_OFFSET_PARAMS = frozenset({"dataOffset"})
 
 
-def _data_slice_body(b, spec_method, params, py) -> tuple[str, str] | None:
+def _data_slice_body(
+    b, spec_object, spec_method, params, py, binds=None, native=None
+) -> tuple[str, str] | None:
     """Emit a body for methods that hand raw bytes to C, or None.
 
     The web API passes a buffer plus an optional ``(dataOffset, size)`` window;
@@ -880,11 +907,18 @@ def _data_slice_body(b, spec_method, params, py) -> tuple[str, str] | None:
     C arguments are matched to IDL parameters positionally, skipping the two
     the C API synthesises (the pointer and its byte count). Whatever IDL
     parameter is left over is the window's size.
+
+    When every remaining parameter is one C already takes as-is, the call is
+    emitted directly, as for the per-draw setters: ``writeBuffer`` runs once
+    per frame and has no reason to walk the interpreted marshaller, which
+    re-derives the same four conversions on every call. ``writeTexture`` takes
+    structs, so it keeps the general path.
     """
-    from . import generate
+    from . import generate, naming
 
     args = spec_method.get("args", [])
-    kinds = [generate._parse_member_type(a["type"])[0] for a in args]
+    parsed = [generate._parse_member_type(a["type"]) for a in args]
+    kinds = [p[0] for p in parsed]
     if "c_void" not in kinds:
         return None
     data_at = kinds.index("c_void")
@@ -895,17 +929,25 @@ def _data_slice_body(b, spec_method, params, py) -> tuple[str, str] | None:
     offset_param = next((p for p in params if p.name in _WINDOW_OFFSET_PARAMS), None)
     rest = [p for p in params if p is not offset_param]
 
-    exprs, index = [], 0
+    exprs, direct, index = [], [], 0
     for position in range(len(args)):
+        kind, ref, _is_array = parsed[position]
         if position == data_at:
             exprs.append("_chunk")
+            # cffi will not take a memoryview for a void*; from_buffer wraps it
+            # without copying, and the cdata lives as long as the call.
+            direct.append("_ffi.from_buffer(_chunk)")
             index += 1  # the IDL's ``data`` parameter
         elif position == count_at:
             exprs.append("_chunk.nbytes")  # synthesised, consumes no parameter
+            direct.append("_chunk.nbytes")
         else:
             if index >= len(rest):
                 return None
-            exprs.append(_ident(bridge.camel_to_snake(rest[index].name)))
+            param = rest[index]
+            name = _ident(bridge.camel_to_snake(param.name))
+            exprs.append(name)
+            direct.append(_direct_arg_expr(kind, ref, name, param, args[position], binds))
             index += 1
     size_param = rest[index] if index < len(rest) else None
 
@@ -913,8 +955,43 @@ def _data_slice_body(b, spec_method, params, py) -> tuple[str, str] | None:
     offset = _ident(bridge.camel_to_snake(offset_param.name)) if offset_param else "0"
     size = _ident(bridge.camel_to_snake(size_param.name)) if size_param else "None"
     prologue = f"_chunk = _slice_data({data_name}, {offset}, {size})"
-    call = f"self._call({spec_method['name']!r}, {', '.join(exprs)})"
+
+    if (
+        spec_object is not None
+        and binds is not None
+        and native is not None
+        and all(e is not None for e in direct)
+    ):
+        c_func = naming.c_method_func(spec_object, spec_method["name"])
+        binds.add(("func", c_func))
+        # No error check, matching the general path these methods used before:
+        # a queue write reports at the next submit, as it always has.
+        call = f"_c_{c_func}(self._handle, {', '.join(direct)})"
+    else:
+        call = f"self._call({spec_method['name']!r}, {', '.join(exprs)})"
     return prologue, call
+
+
+def _direct_arg_expr(kind, ref, name, param, arg, binds):
+    """A C-ready expression for one plain argument, or None if it needs marshalling.
+
+    Deliberately narrow: anything optional or omittable keeps the interpreted
+    path, whose ``None`` handling (the whole-size sentinel, NULL objects) is
+    not worth restating here for the few methods this covers.
+    """
+    if binds is None:
+        return None
+    omittable = not param.required and (param.default or "").strip() in (None, "", "None")
+    if omittable or arg.get("optional"):
+        return None
+    if kind == "prim":
+        return name  # cffi coerces ints and floats itself
+    if kind == "object":
+        return f"{name}._handle"
+    if kind in ("enum", "bitflag"):
+        binds.add((kind, ref))
+        return f"{'_E_' if kind == 'enum' else '_F_'}{ref}[{name}]"
+    return None
 
 
 def _direct_body(b, spec_object, spec_method, params, binds, native) -> str | None:
@@ -1298,7 +1375,9 @@ def _emit_method(
         if call is None:
             # Methods that hand raw bytes to C carry extra IDL parameters (the
             # slice window), so this is tried before the arity check.
-            sliced = _data_slice_body(b, spec_method, params, py)
+            sliced = _data_slice_body(
+                b, spec_object, spec_method, params, py, binds, native
+            )
             if sliced is not None:
                 prologue, call = sliced
         if call is None and len(params) != len(args):

@@ -188,3 +188,71 @@ def test_submit_still_reports_errors(device):
     cpass.end()
     with pytest.raises(wgpu.GPUError):
         device.queue.submit([encoder.finish()])
+
+
+def test_write_buffer_is_compiled(source):
+    """The queue write goes straight to C, like the per-draw setters.
+
+    It runs once per frame and every argument is one C takes as-is, so there is
+    nothing for the interpreted marshaller to work out.
+    """
+    body = source.split("def write_buffer(")[1].split("def ")[0]
+    assert "_c_wgpuQueueWriteBuffer" in body and "_call" not in body
+
+
+def test_write_texture_keeps_the_general_path(source):
+    """The rule is derived, not a list: writeTexture takes structs, so it stays."""
+    body = source.split("def write_texture(")[1].split("def ")[0]
+    assert "self._call(" in body
+
+
+def test_write_buffer_honours_the_data_window(device):
+    """The (data_offset, size) window still slices before the pointer is taken."""
+    import numpy as np
+
+    buffer = device.create_buffer(size=16, usage="COPY_DST|COPY_SRC")
+    payload = np.arange(8, dtype=np.uint32)
+    device.queue.write_buffer(buffer, 0, payload, 4, 16)
+    got = np.frombuffer(device.queue.read_buffer(buffer), dtype=np.uint32)
+    assert list(got) == [1, 2, 3, 4]
+    with pytest.raises(ValueError):
+        device.queue.write_buffer(buffer, 0, payload, 0, 999)
+
+
+def test_generated_classes_declare_slots(source):
+    """A subclass without __slots__ gives every instance a __dict__ back.
+
+    Each base in the chain declares them; if the generated leaf classes stop
+    doing so, the whole chain's saving is silently undone.
+    """
+    import re
+
+    classes = re.findall(r"\nclass (GPU\w+)\([^)]*\):\n(.*?)(?=\nclass |\Z)", source, re.S)
+    assert classes, "no generated classes found -- the pattern is wrong"
+    missing = [name for name, body in classes if "__slots__" not in body]
+    assert not missing, f"generated classes without __slots__: {missing}"
+
+
+def test_objects_have_no_instance_dict(device):
+    buffer = device.create_buffer(size=64, usage="COPY_DST")
+    assert not hasattr(buffer, "__dict__")
+    with pytest.raises(AttributeError):
+        buffer.not_a_real_attribute = 1
+
+
+def test_immutable_properties_are_read_from_c_once(device):
+    """They are fixed by the descriptor, so the second read is a slot load."""
+    buffer = device.create_buffer(size=128, usage="COPY_DST")
+    assert buffer.size == 128
+    assert buffer._c_size == 128  # cached into its own slot, not a dict
+    assert buffer.size == 128
+
+
+def test_mutable_properties_are_not_cached(device):
+    """map_state changes over a buffer's life, so it must not be remembered."""
+    buffer = device.create_buffer(size=64, usage="MAP_READ|COPY_DST")
+    assert buffer.map_state == "unmapped"
+    buffer.map_sync("READ")
+    assert buffer.map_state == "mapped"
+    buffer.unmap()
+    assert buffer.map_state == "unmapped"

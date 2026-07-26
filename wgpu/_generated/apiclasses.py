@@ -47,6 +47,7 @@ _c_wgpuComputePassEncoderDispatchWorkgroupsIndirect = _lib.wgpuComputePassEncode
 _c_wgpuComputePassEncoderEnd = _lib.wgpuComputePassEncoderEnd
 _c_wgpuComputePassEncoderPopDebugGroup = _lib.wgpuComputePassEncoderPopDebugGroup
 _c_wgpuComputePassEncoderSetBindGroup = _lib.wgpuComputePassEncoderSetBindGroup
+_c_wgpuComputePassEncoderSetImmediates = _lib.wgpuComputePassEncoderSetImmediates
 _c_wgpuComputePassEncoderSetPipeline = _lib.wgpuComputePassEncoderSetPipeline
 _c_wgpuComputePipelineGetBindGroupLayout = _lib.wgpuComputePipelineGetBindGroupLayout
 _c_wgpuDeviceCreateBuffer = _lib.wgpuDeviceCreateBuffer
@@ -57,6 +58,7 @@ _c_wgpuDeviceDestroy = _lib.wgpuDeviceDestroy
 _c_wgpuDevicePushErrorScope = _lib.wgpuDevicePushErrorScope
 _c_wgpuQuerySetDestroy = _lib.wgpuQuerySetDestroy
 _c_wgpuQueueSubmit = _lib.wgpuQueueSubmit
+_c_wgpuQueueWriteBuffer = _lib.wgpuQueueWriteBuffer
 _c_wgpuRenderBundleEncoderDraw = _lib.wgpuRenderBundleEncoderDraw
 _c_wgpuRenderBundleEncoderDrawIndexed = _lib.wgpuRenderBundleEncoderDrawIndexed
 _c_wgpuRenderBundleEncoderDrawIndexedIndirect = _lib.wgpuRenderBundleEncoderDrawIndexedIndirect
@@ -64,6 +66,7 @@ _c_wgpuRenderBundleEncoderDrawIndirect = _lib.wgpuRenderBundleEncoderDrawIndirec
 _c_wgpuRenderBundleEncoderFinish = _lib.wgpuRenderBundleEncoderFinish
 _c_wgpuRenderBundleEncoderPopDebugGroup = _lib.wgpuRenderBundleEncoderPopDebugGroup
 _c_wgpuRenderBundleEncoderSetBindGroup = _lib.wgpuRenderBundleEncoderSetBindGroup
+_c_wgpuRenderBundleEncoderSetImmediates = _lib.wgpuRenderBundleEncoderSetImmediates
 _c_wgpuRenderBundleEncoderSetIndexBuffer = _lib.wgpuRenderBundleEncoderSetIndexBuffer
 _c_wgpuRenderBundleEncoderSetPipeline = _lib.wgpuRenderBundleEncoderSetPipeline
 _c_wgpuRenderBundleEncoderSetVertexBuffer = _lib.wgpuRenderBundleEncoderSetVertexBuffer
@@ -77,6 +80,7 @@ _c_wgpuRenderPassEncoderEndOcclusionQuery = _lib.wgpuRenderPassEncoderEndOcclusi
 _c_wgpuRenderPassEncoderExecuteBundles = _lib.wgpuRenderPassEncoderExecuteBundles
 _c_wgpuRenderPassEncoderPopDebugGroup = _lib.wgpuRenderPassEncoderPopDebugGroup
 _c_wgpuRenderPassEncoderSetBindGroup = _lib.wgpuRenderPassEncoderSetBindGroup
+_c_wgpuRenderPassEncoderSetImmediates = _lib.wgpuRenderPassEncoderSetImmediates
 _c_wgpuRenderPassEncoderSetIndexBuffer = _lib.wgpuRenderPassEncoderSetIndexBuffer
 _c_wgpuRenderPassEncoderSetPipeline = _lib.wgpuRenderPassEncoderSetPipeline
 _c_wgpuRenderPassEncoderSetScissorRect = _lib.wgpuRenderPassEncoderSetScissorRect
@@ -119,6 +123,7 @@ __all__ = [
 
 class GPUAdapter(GPUHandle):
     """GPUAdapter -- see the WebGPU specification."""
+    __slots__ = ()
     _spec_name = 'adapter'
 
     def request_device_async(self, *, label: str = "", required_features: Sequence[enums.FeatureNameEnum] = (), required_limits: dict[str, int | None] = None, default_queue: structs.QueueDescriptorStruct | None = None) -> GPUDevice:
@@ -141,6 +146,7 @@ class GPUAdapter(GPUHandle):
 
 class GPUBindGroup(GPUObjectBase):
     """GPUBindGroup -- see the WebGPU specification."""
+    __slots__ = ()
     _spec_name = 'bind_group'
 
     pass
@@ -149,6 +155,7 @@ class GPUBindGroup(GPUObjectBase):
 
 class GPUBindGroupLayout(GPUObjectBase):
     """GPUBindGroupLayout -- see the WebGPU specification."""
+    __slots__ = ()
     _spec_name = 'bind_group_layout'
 
     pass
@@ -157,6 +164,7 @@ class GPUBindGroupLayout(GPUObjectBase):
 
 class GPUBindingCommandsMixin(Mixin):
     """GPUBindingCommandsMixin -- see the WebGPU specification."""
+    __slots__ = ()
 
     set_bind_group = _ov.binding_commands_set_bind_group
 
@@ -169,6 +177,7 @@ class GPUBindingCommandsMixin(Mixin):
 
 class GPUBuffer(GPUObjectBase):
     """GPUBuffer -- see the WebGPU specification."""
+    __slots__ = ('_c_size', '_c_usage')
     _spec_name = 'buffer'
 
     map_async = _ov.buffer_map_async
@@ -186,12 +195,20 @@ class GPUBuffer(GPUObjectBase):
     @property
     def size(self) -> int:
         """GPUBuffer.size"""
-        return self._get_cached('get_size')
+        try:
+            return self._c_size
+        except AttributeError:
+            value = self._c_size = self._get('get_size')
+            return value
 
     @property
     def usage(self) -> int:
         """GPUBuffer.usage"""
-        return self._get_cached('get_usage')
+        try:
+            return self._c_usage
+        except AttributeError:
+            value = self._c_usage = self._get('get_usage')
+            return value
 
     map_state = _ov.buffer_map_state
 
@@ -199,6 +216,7 @@ class GPUBuffer(GPUObjectBase):
 
 class GPUCommandBuffer(GPUObjectBase):
     """GPUCommandBuffer -- see the WebGPU specification."""
+    __slots__ = ()
     _spec_name = 'command_buffer'
 
     pass
@@ -207,6 +225,7 @@ class GPUCommandBuffer(GPUObjectBase):
 
 class GPUCommandsMixin(Mixin):
     """GPUCommandsMixin -- see the WebGPU specification."""
+    __slots__ = ()
 
     pass
 
@@ -214,6 +233,7 @@ class GPUCommandsMixin(Mixin):
 
 class GPUDebugCommandsMixin(Mixin):
     """GPUDebugCommandsMixin -- see the WebGPU specification."""
+    __slots__ = ()
 
     def push_debug_group(self, group_label: str) -> None:
         """GPUDebugCommandsMixin.pushDebugGroup -- see the WebGPU specification."""
@@ -231,6 +251,7 @@ class GPUDebugCommandsMixin(Mixin):
 
 class GPUCommandEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUObjectBase):
     """GPUCommandEncoder -- see the WebGPU specification."""
+    __slots__ = ()
     _spec_name = 'command_encoder'
 
     def begin_render_pass(self, *, label: str = "", color_attachments: Sequence[structs.RenderPassColorAttachmentStruct], depth_stencil_attachment: structs.RenderPassDepthStencilAttachmentStruct | None = None, occlusion_query_set: GPUQuerySet | None = None, timestamp_writes: structs.RenderPassTimestampWritesStruct | None = None, max_draw_count: int = 50000000) -> GPURenderPassEncoder:
@@ -286,6 +307,7 @@ class GPUCommandEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUObjectBase):
 
 class GPUComputePassEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCommandsMixin, GPUObjectBase):
     """GPUComputePassEncoder -- see the WebGPU specification."""
+    __slots__ = ()
     _spec_name = 'compute_pass_encoder'
 
     def set_pipeline(self, pipeline: GPUComputePipeline) -> None:
@@ -310,10 +332,16 @@ class GPUComputePassEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingC
 
     _c_set_bind_group = staticmethod(_c_wgpuComputePassEncoderSetBindGroup)
 
+    def set_immediates(self, range_offset: int, data: ArrayLike, data_offset: int = 0, data_size: int | None = None) -> None:
+        """GPUComputePassEncoder.setImmediates -- see the WebGPU specification."""
+        _chunk = _slice_data(data, data_offset, data_size)
+        return _c_wgpuComputePassEncoderSetImmediates(self._handle, range_offset, _ffi.from_buffer(_chunk), _chunk.nbytes)
+
 
 
 class GPUPipelineBase(Mixin):
     """GPUPipelineBase -- see the WebGPU specification."""
+    __slots__ = ()
 
     def get_bind_group_layout(self, index: int) -> GPUBindGroupLayout:
         """GPUPipelineBase.getBindGroupLayout -- see the WebGPU specification."""
@@ -323,6 +351,7 @@ class GPUPipelineBase(Mixin):
 
 class GPUComputePipeline(GPUPipelineBase, GPUObjectBase):
     """GPUComputePipeline -- see the WebGPU specification."""
+    __slots__ = ()
     _spec_name = 'compute_pipeline'
 
     def get_bind_group_layout(self, index: int) -> GPUBindGroupLayout:
@@ -333,6 +362,7 @@ class GPUComputePipeline(GPUPipelineBase, GPUObjectBase):
 
 class GPUDevice(GPUObjectBase):
     """GPUDevice -- see the WebGPU specification."""
+    __slots__ = ()
     _spec_name = 'device'
 
     def destroy(self) -> None:
@@ -503,6 +533,7 @@ class GPUDevice(GPUObjectBase):
 
 class GPUPipelineLayout(GPUObjectBase):
     """GPUPipelineLayout -- see the WebGPU specification."""
+    __slots__ = ()
     _spec_name = 'pipeline_layout'
 
     pass
@@ -511,6 +542,7 @@ class GPUPipelineLayout(GPUObjectBase):
 
 class GPUQuerySet(GPUObjectBase):
     """GPUQuerySet -- see the WebGPU specification."""
+    __slots__ = ('_c_count', '_c_type')
     _spec_name = 'query_set'
 
     def destroy(self) -> None:
@@ -520,17 +552,26 @@ class GPUQuerySet(GPUObjectBase):
     @property
     def type(self) -> enums.QueryTypeEnum:
         """GPUQuerySet.type"""
-        return self._get_cached('get_type')
+        try:
+            return self._c_type
+        except AttributeError:
+            value = self._c_type = self._get('get_type')
+            return value
 
     @property
     def count(self) -> int:
         """GPUQuerySet.count"""
-        return self._get_cached('get_count')
+        try:
+            return self._c_count
+        except AttributeError:
+            value = self._c_count = self._get('get_count')
+            return value
 
 
 
 class GPUQueue(GPUObjectBase):
     """GPUQueue -- see the WebGPU specification."""
+    __slots__ = ()
     _spec_name = 'queue'
 
     def submit(self, command_buffers: Sequence[GPUCommandBuffer]) -> None:
@@ -553,7 +594,7 @@ class GPUQueue(GPUObjectBase):
     def write_buffer(self, buffer: GPUBuffer, buffer_offset: int, data: ArrayLike, data_offset: int = 0, size: int | None = None) -> None:
         """GPUQueue.writeBuffer -- see the WebGPU specification."""
         _chunk = _slice_data(data, data_offset, size)
-        return self._call('write_buffer', buffer, buffer_offset, _chunk, _chunk.nbytes)
+        return _c_wgpuQueueWriteBuffer(self._handle, buffer._handle, buffer_offset, _ffi.from_buffer(_chunk), _chunk.nbytes)
 
     def write_texture(self, destination: structs.TexelCopyTextureInfoStruct, data: ArrayLike, data_layout: structs.TexelCopyBufferLayoutStruct, size: tuple[int, int, int] | structs.Extent3DStruct) -> None:
         """GPUQueue.writeTexture -- see the WebGPU specification."""
@@ -564,6 +605,7 @@ class GPUQueue(GPUObjectBase):
 
 class GPURenderBundle(GPUObjectBase):
     """GPURenderBundle -- see the WebGPU specification."""
+    __slots__ = ()
     _spec_name = 'render_bundle'
 
     pass
@@ -572,6 +614,7 @@ class GPURenderBundle(GPUObjectBase):
 
 class GPURenderCommandsMixin(Mixin):
     """GPURenderCommandsMixin -- see the WebGPU specification."""
+    __slots__ = ()
 
     def set_pipeline(self, pipeline: GPURenderPipeline) -> None:
         """GPURenderCommandsMixin.setPipeline -- see the WebGPU specification."""
@@ -605,6 +648,7 @@ class GPURenderCommandsMixin(Mixin):
 
 class GPURenderBundleEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCommandsMixin, GPURenderCommandsMixin, GPUObjectBase):
     """GPURenderBundleEncoder -- see the WebGPU specification."""
+    __slots__ = ()
     _spec_name = 'render_bundle_encoder'
 
     def finish(self, *, label: str = "") -> GPURenderBundle:
@@ -625,6 +669,11 @@ class GPURenderBundleEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBinding
         return _c_wgpuRenderBundleEncoderPopDebugGroup(self._handle)
 
     _c_set_bind_group = staticmethod(_c_wgpuRenderBundleEncoderSetBindGroup)
+
+    def set_immediates(self, range_offset: int, data: ArrayLike, data_offset: int = 0, data_size: int | None = None) -> None:
+        """GPURenderBundleEncoder.setImmediates -- see the WebGPU specification."""
+        _chunk = _slice_data(data, data_offset, data_size)
+        return _c_wgpuRenderBundleEncoderSetImmediates(self._handle, range_offset, _ffi.from_buffer(_chunk), _chunk.nbytes)
 
     def set_pipeline(self, pipeline: GPURenderPipeline) -> None:
         """GPURenderBundleEncoder.setPipeline -- see the WebGPU specification."""
@@ -658,6 +707,7 @@ class GPURenderBundleEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBinding
 
 class GPURenderPassEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCommandsMixin, GPURenderCommandsMixin, GPUObjectBase):
     """GPURenderPassEncoder -- see the WebGPU specification."""
+    __slots__ = ()
     _spec_name = 'render_pass_encoder'
 
     def set_viewport(self, x: float, y: float, width: float, height: float, min_depth: float, max_depth: float) -> None:
@@ -701,6 +751,11 @@ class GPURenderPassEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCo
 
     _c_set_bind_group = staticmethod(_c_wgpuRenderPassEncoderSetBindGroup)
 
+    def set_immediates(self, range_offset: int, data: ArrayLike, data_offset: int = 0, data_size: int | None = None) -> None:
+        """GPURenderPassEncoder.setImmediates -- see the WebGPU specification."""
+        _chunk = _slice_data(data, data_offset, data_size)
+        return _c_wgpuRenderPassEncoderSetImmediates(self._handle, range_offset, _ffi.from_buffer(_chunk), _chunk.nbytes)
+
     def set_pipeline(self, pipeline: GPURenderPipeline) -> None:
         """GPURenderPassEncoder.setPipeline -- see the WebGPU specification."""
         return _c_wgpuRenderPassEncoderSetPipeline(self._handle, pipeline._handle)
@@ -733,6 +788,7 @@ class GPURenderPassEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCo
 
 class GPURenderPipeline(GPUPipelineBase, GPUObjectBase):
     """GPURenderPipeline -- see the WebGPU specification."""
+    __slots__ = ()
     _spec_name = 'render_pipeline'
 
     def get_bind_group_layout(self, index: int) -> GPUBindGroupLayout:
@@ -743,6 +799,7 @@ class GPURenderPipeline(GPUPipelineBase, GPUObjectBase):
 
 class GPUSampler(GPUObjectBase):
     """GPUSampler -- see the WebGPU specification."""
+    __slots__ = ()
     _spec_name = 'sampler'
 
     pass
@@ -751,6 +808,7 @@ class GPUSampler(GPUObjectBase):
 
 class GPUShaderModule(GPUObjectBase):
     """GPUShaderModule -- see the WebGPU specification."""
+    __slots__ = ()
     _spec_name = 'shader_module'
 
     get_compilation_info_async = _ov.shader_module_get_compilation_info_async
@@ -761,6 +819,7 @@ class GPUShaderModule(GPUObjectBase):
 
 class GPUTexture(GPUObjectBase):
     """GPUTexture -- see the WebGPU specification."""
+    __slots__ = ('_c_depth_or_array_layers', '_c_dimension', '_c_format', '_c_height', '_c_mip_level_count', '_c_sample_count', '_c_usage', '_c_width')
     _spec_name = 'texture'
 
     def create_view(self, *, label: str = "", format: enums.TextureFormatEnum | None = None, dimension: enums.TextureViewDimensionEnum | None = None, usage: flags.TextureUsageFlags = 0, aspect: enums.TextureAspectEnum = "all", base_mip_level: int = 0, mip_level_count: int | None = None, base_array_layer: int = 0, array_layer_count: int | None = None, swizzle: str = "rgba") -> GPUTextureView:
@@ -774,42 +833,74 @@ class GPUTexture(GPUObjectBase):
     @property
     def width(self) -> int:
         """GPUTexture.width"""
-        return self._get_cached('get_width')
+        try:
+            return self._c_width
+        except AttributeError:
+            value = self._c_width = self._get('get_width')
+            return value
 
     @property
     def height(self) -> int:
         """GPUTexture.height"""
-        return self._get_cached('get_height')
+        try:
+            return self._c_height
+        except AttributeError:
+            value = self._c_height = self._get('get_height')
+            return value
 
     @property
     def depth_or_array_layers(self) -> int:
         """GPUTexture.depthOrArrayLayers"""
-        return self._get_cached('get_depth_or_array_layers')
+        try:
+            return self._c_depth_or_array_layers
+        except AttributeError:
+            value = self._c_depth_or_array_layers = self._get('get_depth_or_array_layers')
+            return value
 
     @property
     def mip_level_count(self) -> int:
         """GPUTexture.mipLevelCount"""
-        return self._get_cached('get_mip_level_count')
+        try:
+            return self._c_mip_level_count
+        except AttributeError:
+            value = self._c_mip_level_count = self._get('get_mip_level_count')
+            return value
 
     @property
     def sample_count(self) -> int:
         """GPUTexture.sampleCount"""
-        return self._get_cached('get_sample_count')
+        try:
+            return self._c_sample_count
+        except AttributeError:
+            value = self._c_sample_count = self._get('get_sample_count')
+            return value
 
     @property
     def dimension(self) -> enums.TextureDimensionEnum:
         """GPUTexture.dimension"""
-        return self._get_cached('get_dimension')
+        try:
+            return self._c_dimension
+        except AttributeError:
+            value = self._c_dimension = self._get('get_dimension')
+            return value
 
     @property
     def format(self) -> enums.TextureFormatEnum:
         """GPUTexture.format"""
-        return self._get_cached('get_format')
+        try:
+            return self._c_format
+        except AttributeError:
+            value = self._c_format = self._get('get_format')
+            return value
 
     @property
     def usage(self) -> int:
         """GPUTexture.usage"""
-        return self._get_cached('get_usage')
+        try:
+            return self._c_usage
+        except AttributeError:
+            value = self._c_usage = self._get('get_usage')
+            return value
 
     texture_binding_view_dimension = _ov.texture_texture_binding_view_dimension
 
@@ -817,6 +908,7 @@ class GPUTexture(GPUObjectBase):
 
 class GPUTextureView(GPUObjectBase):
     """GPUTextureView -- see the WebGPU specification."""
+    __slots__ = ()
     _spec_name = 'texture_view'
 
     pass

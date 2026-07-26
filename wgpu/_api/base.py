@@ -52,7 +52,6 @@ class GPUHandle(Mixin):
         # Warnings that are issued once per device rather than once per call,
         # because they sit in front of per-frame calls.
         "_warned_aspect_keys",
-        "_cache",
         # Objects a render bundle encoder was handed. It reads them again at
         # finish(), so it -- alone among the encoders -- has to outlive the
         # caller's references to them.
@@ -98,7 +97,6 @@ class GPUHandle(Mixin):
         self._uncaptured_error_handler = None
         self._binding_view_dimension = None
         self._warned_aspect_keys = None
-        self._cache = {}
         self._map_status = (0, 0, 0)
         self._mapped_views = []
         self._retained = None
@@ -153,20 +151,6 @@ class GPUHandle(Mixin):
 
     def _get(self, spec_method: str):
         return get_api().invoke(self, spec_method, ())
-
-    def _get_cached(self, spec_method: str):
-        """Like :meth:`_get`, for values that cannot change after creation.
-
-        A buffer's size, a texture's format and so on are fixed by the
-        descriptor they were made from, so reading them need not cross the FFI
-        boundary more than once -- and they are read constantly in render loops.
-        """
-        cache = self._cache
-        try:
-            return cache[spec_method]
-        except KeyError:
-            value = cache[spec_method] = get_api().invoke(self, spec_method, ())
-            return value
 
     @staticmethod
     def _promise(future):
