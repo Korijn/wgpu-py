@@ -92,5 +92,5 @@ def test_array_and_object_and_nested(builder):
 
 def test_unknown_field_rejected(builder):
     b, _ffi, _flags = builder
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError):
         b.new("buffer_descriptor", {"nonexistent": 1})

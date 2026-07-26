@@ -133,7 +133,9 @@ class StructBuilder:
                     mapping[normalised] = mapping.pop(key)
             unknown = set(mapping) - known
         if unknown:
-            raise TypeError(f"{desc.c_name}: unexpected fields {sorted(unknown)}")
+            # ValueError, not TypeError: this is a bad value in a struct, and
+            # it is what wgpu-py has always raised for an unknown field.
+            raise ValueError(f"{desc.c_name}: unexpected fields {sorted(unknown)}")
         for mem in desc.members:
             value = mapping.get(mem.py, _MISSING)
             if value is None:
@@ -201,8 +203,12 @@ class StructBuilder:
         raise TypeError(f"{mem.c}: expected number, got {type(value).__name__}")
 
     def _handle(self, value):
-        """The C handle behind a public object, or NULL."""
-        if value is None:
+        """The C handle behind a public object, or NULL.
+
+        A pipeline layout may be given as ``"auto"`` instead of an object --
+        the IDL types it as a union -- and C spells that as a null layout.
+        """
+        if value is None or value == "auto":
             return self.ffi.NULL
         return getattr(value, "_handle", value)
 
@@ -254,7 +260,9 @@ class StructBuilder:
                     f"and {child.c_name} has {len(child.members)}"
                 )
             key_name, value_name = (m.py for m in child.members)
-            value = [{key_name: k, value_name: v} for k, v in value.items()]
+            # WGSL overrides can be addressed by @id number as well as by name,
+            # and the key is a string either way.
+            value = [{key_name: str(k), value_name: v} for k, v in value.items()]
         items = list(value)
         n = len(items)
         setattr(ptr, mem.count_c, n)
