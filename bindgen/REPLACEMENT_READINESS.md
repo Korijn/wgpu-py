@@ -119,6 +119,46 @@ structural -- stop making one Python call per GPU command:
 * **`multi_draw_indirect`** (a wgpu-native extra, not yet wrapped);
 * **batched setters** that take an array of draw parameters and loop in C.
 
+## What is generated, and what is not
+
+Priority one is that this stays generated. The census, after deleting the
+classic implementation:
+
+| | lines |
+| --- | ---: |
+| **Generated** (committed output) | **6,123** |
+| Binding runtime (`_api` + `_runtime`) | 2,834 |
+| -- of which the salvaged promise implementation | 437 |
+| wgpu-native extras (non-standard, no spec describes them) | 201 |
+| Generator (development only, not shipped) | 2,903 |
+
+The classic backend it replaces was ~5,500 hand-written lines in `_api.py`,
+`_mappings.py`, `_helpers.py` and `_ffi.py` alone.
+
+### The hand-written methods, audited
+
+Five methods are not generated. Each is policy rather than mechanics:
+
+| method | why it cannot be derived |
+| --- | --- |
+| `setBindGroup` | the IDL overloads it with a window over an *array*, not a buffer |
+| `mapAsync`, `getMappedRange`, `unmap` | need Python-side map state: wgpu-native leaves `GetMapState` unimplemented, and handing C a bad range aborts the process |
+| `getCompilationInfo` | also unimplemented in C; reporting "no messages" is a decision |
+
+Three more used to be on that list -- `writeBuffer`, `writeTexture` and
+`setImmediates` -- and are now derived, because they share one shape: the web
+API passes a buffer plus an optional `(dataOffset, size)` window where C wants
+a pointer and a byte count. One rule replaced three functions, so the next spec
+revision that adds a data-taking method gets it free.
+
+The wgpu-native extras stay hand-written on purpose. Deriving module-level
+function names from a C header would be a naming heuristic rather than
+something either spec states, and it would auto-expose a large surface nobody
+asked for. They do carry the generated layer's guarantee: `test_extras_are_pinned.py`
+checks every C function they reference still exists, and that neither they nor
+the generated code ever wrap one of wgpu-native's unimplemented functions --
+which would abort the process rather than raise.
+
 ## Porting the historical suite
 
 In progress. **171 of 235 tests pass**, with no errors and no crashes -- from a
