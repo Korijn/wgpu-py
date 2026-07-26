@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from wgpu._runtime.errors import InvalidValueError
+
 _MISSING = object()
 
 
@@ -136,8 +138,6 @@ class StructBuilder:
                     mapping[normalised] = mapping.pop(key)
             unknown = set(mapping) - known
         if unknown:
-            from wgpu._runtime.errors import InvalidValueError
-
             raise InvalidValueError(
                 f"{desc.c_name}: unexpected fields {sorted(unknown)}"
             )
@@ -150,6 +150,15 @@ class StructBuilder:
             if value is _MISSING:
                 value = self._default(mem)
                 if value is _MISSING:
+                    if mem.required:
+                        # No value and no default, and the IDL says there has to
+                        # be one. Left alone it would go out as a zero, which
+                        # wgpu-native reads as a real value -- a zero-sized
+                        # texture, a black clear colour -- so it has to say so
+                        # here, where the caller can still see which field.
+                        raise InvalidValueError(
+                            f"{desc.c_name}: {mem.py!r} is required"
+                        )
                     if mem.kind == "string":
                         # Zero is the empty string here, not "not specified", so
                         # an unset member has to be written rather than left

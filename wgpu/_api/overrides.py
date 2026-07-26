@@ -55,6 +55,7 @@ def _limits(obj) -> dict:
 
 
 def _features(obj) -> set:
+    """``get_features`` reports into an out-parameter; expose it as a set."""
     return set(obj._get("get_features").get("features", ()))
 
 

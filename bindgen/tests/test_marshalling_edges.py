@@ -657,3 +657,93 @@ def test_unreleasable_object_types_get_no_class(wgpu):
     assert "external_texture" in OBJECTS  # still in the C spec
     assert not hasattr(classes, "GPUExternalTexture")
     assert "ExternalTexture" not in wgpu.diagnostics.object_counts.get_dict()
+
+
+# -- required struct members -------------------------------------------------
+
+
+def test_a_required_member_with_no_value_is_an_error(wgpu, device):
+    """A zero is a value, not an absence, so it cannot stand in for one.
+
+    The C spec has no notion of a required field -- every field of a C struct
+    exists, zeroed -- so this comes from the Web IDL's ``required``. Without it
+    an omitted width reaches wgpu-native as a zero-sized texture, which fails
+    later and somewhere else, if it fails at all.
+    """
+    from wgpu._runtime.api import get_api
+
+    build = get_api().invoker.structs.new
+    for bad in ({"height": 20}, (), []):
+        with pytest.raises(ValueError):
+            build("extent_3D", bad)
+    with pytest.raises(ValueError):
+        build("color", (0.1, 0.2, 0.3))  # a is required too
+
+    # A member with a default is a different thing, and still fills itself in.
+    ptr, _keep = build("extent_3D", {"width": 10})
+    assert (ptr.width, ptr.height, ptr.depthOrArrayLayers) == (10, 1, 1)
+
+
+def test_required_comes_from_the_idl_not_from_a_list():
+    """Nothing names ``width`` here; the vendored IDL does."""
+    from wgpu._generated.structs import STRUCTS
+
+    required = {m.py for m in STRUCTS["extent_3D"].members if m.required}
+    assert required == {"width"}
+    assert {m.py for m in STRUCTS["origin_3D"].members if m.required} == set()
+    assert {m.py for m in STRUCTS["color"].members if m.required} == {
+        "r",
+        "g",
+        "b",
+        "a",
+    }
+    # A label is never required, on any descriptor.
+    assert not any(
+        m.required for desc in STRUCTS.values() for m in desc.members if m.py == "label"
+    )
+
+
+def test_an_enum_map_remembers_its_canonical_spellings(wgpu):
+    """The alternates are cached into the map, so the originals need keeping.
+
+    Without this the "expected ..." message grows every time someone spells a
+    name a different way, and nothing can ask what the real values are.
+    """
+    from wgpu._generated.apienums import TO_INT
+
+    table = TO_INT["texture_format"]
+    before = set(table.spellings)
+    # An underscored spelling resolves, and is cached into the map itself ...
+    assert table["depth24plus_stencil8"] == table["depth24plus-stencil8"]
+    assert "depth24plus_stencil8" in table
+    # ... but the canonical set is unchanged by that.
+    assert set(table.spellings) == before
+    assert "depth24plus_stencil8" not in before
+
+
+# -- wgpu-py's own extras ----------------------------------------------------
+
+
+def test_adapter_can_be_pinned_by_name(wgpu, monkeypatch):
+    """``WGPUPY_WGPU_ADAPTER_NAME`` is how CI picks the software renderer."""
+    summary = wgpu.gpu.request_adapter_sync().summary
+    fragment = summary.split("|")[0].strip().split()[0]
+
+    monkeypatch.setenv("WGPUPY_WGPU_ADAPTER_NAME", fragment)
+    promise = wgpu.gpu.request_adapter_async()
+    assert promise._title == "adapter by name"
+    assert fragment in promise.sync_wait().summary
+
+    monkeypatch.setenv("WGPUPY_WGPU_ADAPTER_NAME", "no-such-adapter-anywhere")
+    with pytest.raises(ValueError):
+        wgpu.gpu.request_adapter_sync()
+
+
+def test_api_tracing_refuses_rather_than_writing_nothing(wgpu):
+    """wgpu removed tracing upstream; wgpu-native's cargo feature is disabled."""
+    import wgpu.backends.wgpu_native as native
+
+    adapter = wgpu.gpu.request_adapter_sync()
+    with pytest.raises(NotImplementedError) as info:
+        native.request_device_sync(adapter, "/tmp/some-trace-dir")
+    assert "wgpu-native" in str(info.value)

@@ -34,11 +34,16 @@ def spec_spelling(key: str) -> str:
 class EnumMap(dict):
     """Maps a WebGPU enum string (or a raw int) to its C integer."""
 
-    __slots__ = ("name",)
+    __slots__ = ("name", "spellings")
 
     def __init__(self, name: str, mapping: dict):
         super().__init__(mapping)
         self.name = name
+        # The spellings the spec itself uses. Alternates are cached into the
+        # dict as they are met, so without this the canonical set would be lost
+        # after the first lookup -- and the "expected ..." message below would
+        # grow every time someone spelled a name a different way.
+        self.spellings = tuple(k for k in mapping if isinstance(k, str))
 
     def __missing__(self, key):
         if isinstance(key, int) and not isinstance(key, bool):
@@ -51,7 +56,7 @@ class EnumMap(dict):
             if dict.__contains__(self, hyphenated):
                 value = self[key] = dict.__getitem__(self, hyphenated)
                 return value
-        options = ", ".join(repr(k) for k in self if isinstance(k, str))
+        options = ", ".join(repr(k) for k in self.spellings)
         raise InvalidValueError(
             f"Invalid value for {self.name}: {key!r}. Expected {options}."
         )

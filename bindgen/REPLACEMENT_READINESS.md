@@ -3,9 +3,10 @@
 Can the generated implementation replace the classic one? This is the measured
 status, so the decision to delete the old code stays evidence-based.
 
-**The public API is now generated end to end, and it performs.** What remains
-is porting the historical `tests/` suite, which still imports the old module
-layout.
+**The public API is now generated end to end, it performs, and the historical
+suites pass.** `tests/` is 232 passed / 1 skipped and `tests_mem` is 38 passed
+/ 4 skipped, against one file that still needs a decision rather than a port
+(the polling thread -- see "What is left").
 
 ## How it is built
 
@@ -53,8 +54,8 @@ translation: generated code already speaks C-side member names and integers.
 Public enums are **strings**, as the web API and existing wgpu-py code expect:
 
 ```python
-wgpu.TextureFormat.rgba8unorm == "rgba8unorm"     # True
-wgpu.AddressMode.clamp_to_edge == "clamp-to-edge" # True
+wgpu.TextureFormat.rgba8unorm == "rgba8unorm"  # True
+wgpu.AddressMode.clamp_to_edge == "clamp-to-edge"  # True
 ```
 
 This is not a judgement call — the generated enums and flags are
@@ -209,10 +210,11 @@ which would abort the process rather than raise.
 
 ## Porting the historical suite
 
-In progress. **215 of 233 tests pass**, with no errors and no crashes -- from a
-suite that would not even collect. **`tests_mem` passes in full** (38 passed,
-4 skipped for a missing GUI toolkit or an unimplemented object), where before
-it could not be imported at all.
+Done, bar one file. **`tests/` passes in full** -- 232 passed, 1 skipped, no
+errors and no crashes -- from a suite that would not even collect. **`tests_mem`
+passes in full** too (38 passed, 4 skipped for a missing GUI toolkit or an
+unimplemented object), where before it could not be imported at all. The
+exception is `test_wgpu_native_poller.py`; see "What is left".
 
 It has earned its keep repeatedly, finding bugs nothing else did:
 
@@ -296,25 +298,40 @@ Counting costs about 3% on object creation, because it is a class-attribute
 load and one item store rather than a dict keyed by class name; the names are
 recovered by walking the class tree, which only the diagnostic does.
 
-### Remaining failures, by file
+### What porting the last tests turned up
 
-| file | failing | what they are |
-| --- | ---: | --- |
-| `test_wgpu_native_basics.py` | 9 | probe `_api` / `_ffi` / `_helpers` / `_internal`, plus API tracing |
-| `test_api.py` | 7 | classic construction, backend registration, `wgpu._classes` |
-| others (2 files) | 2 | `_mappings`, backend-qualified `repr` |
+The tests that reached for deleted internals were ported to the layer that
+replaced each one, rather than deleted -- and doing that found four more real
+things, which is the argument for porting rather than discarding:
 
-What is left is now almost entirely tests reaching for classic internals that
-no longer exist -- they need porting, not implementation changes. The one real
-gap is API tracing, which is unimplemented and says so.
+* **An omitted *required* struct member went out as a zero.** `size={"height":
+  20}` reached wgpu-native as a zero-width texture. The C spec has no notion of
+  a required field -- every field of a C struct exists, zeroed -- so this comes
+  from the Web IDL's `required`, which now rides in the descriptor. It is the
+  IDL that names `width`, not a list here.
+* **`WGPUPY_WGPU_ADAPTER_NAME` did not work.** It is how wgpu-py's own CI pins
+  the software renderer on a machine with several adapters, and it had been
+  dropped.
+* **`PipelineStatisticName` did not behave like an enum**, despite being one:
+  it could not be iterated and did not answer `in`. It now carries the same
+  metaclass as the generated enums.
+* **`EnumMap` forgot its canonical spellings.** It caches `snake_case` and
+  `CamelCase` forms into itself as they are met, so after one odd lookup there
+  was no way to ask what the real values were -- and the "expected ..." message
+  grew every time someone spelled a name differently.
 
-Two behaviours were deliberately *not* matched. `repr` says
-`<wgpu.GPUDevice object 'x' at ...>` rather than naming
-`wgpu.backends.wgpu_native`: the classes really do live in `wgpu`, and a repr
-that names a module you cannot import them from is worse than a test that
-needs porting. And limits are reported hyphenated, as they always were, but
-`GPUObjectBase.__init__` takes the new argument list rather than the classic
-one.
+API tracing turned out not to be a gap in this rewrite at all: wgpu removed the
+feature (gfx-rs/wgpu#5974) and wgpu-native's `trace` cargo feature is commented
+out waiting for it to return. `request_device_sync(adapter, trace_path)` now
+says so instead of silently writing nothing.
+
+Two behaviours were deliberately *not* matched, and the tests were updated to
+say why. `repr` says `<wgpu.GPUDevice object 'x' at ...>` rather than naming
+`wgpu.backends.wgpu_native`: the classes really do live in `wgpu` and are only
+re-exported there, so naming that module would point at somewhere you cannot
+import them from. And objects can no longer be constructed out of nothing --
+an object *is* a handle wgpu-native owns -- so the tests that faked a device
+and an adapter now use real ones.
 
 ## Packaging
 
@@ -343,8 +360,17 @@ the check that keeps "fully generated" true rather than aspirational.
 
 ## What is left
 
-1. Port the ~18 remaining tests that reach for deleted internals.
-2. Push constants, and API tracing.
+1. **The polling thread.** `tests/test_wgpu_native_poller.py` is the one file
+   that still does not collect: it imports `wgpu.backends.wgpu_native._poller`,
+   a thread that polled a device only while async work was outstanding, so
+   callbacks fired without anyone awaiting them. This design instead pumps from
+   the awaiting task, which resolves every promise the suite exercises but does
+   nothing for a promise nobody awaits, and does its waiting on the event-loop
+   thread rather than off it. Restoring the thread is an architectural choice
+   about how async work is driven, not a test port, so it is left as one --
+   the module is self-contained (~120 lines of pure threading) and its test
+   file is the specification for it.
+2. Push constants.
 3. Descriptors that still marshal at runtime (arrays and nested structs) could
    use the same compiled bodies as the flat ones.
 

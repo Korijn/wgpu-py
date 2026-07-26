@@ -16,7 +16,10 @@ def test_buffer_init1():
     device = wgpu.utils.get_default_device()
     data1 = b"abcdefghijkl"
 
-    assert repr(device).startswith("<wgpu.backends.wgpu_native.GPUDevice ")
+    # The classes really do live in wgpu, and are re-exported from
+    # wgpu.backends.wgpu_native rather than defined there -- so naming that
+    # module in the repr would point at somewhere you cannot import them from.
+    assert repr(device).startswith("<wgpu.GPUDevice ")
 
     # Create buffer. COPY_SRC is needed to read the buffer via the queue.
     buf = device.create_buffer_with_data(data=data1, usage=wgpu.BufferUsage.COPY_SRC)
@@ -30,15 +33,13 @@ def test_buffer_init1():
     # Create buffer. MAP_READ is needed to read the buffer via the queue.
     buf = device.create_buffer_with_data(data=data1, usage=wgpu.BufferUsage.MAP_READ)
 
-    wgpu.backends.wgpu_native._api.libf.wgpuDevicePoll(
-        buf._device._internal, True, wgpu.backends.wgpu_native.ffi.NULL
-    )
+    # Was a direct wgpuDevicePoll call through the backend's private libf.
+    buf._device._poll_wait()
 
     # Download from buffer to CPU
     buf.map_sync(wgpu.MapMode.READ)
-    wgpu.backends.wgpu_native._api.libf.wgpuDevicePoll(
-        buf._device._internal, True, wgpu.backends.wgpu_native.ffi.NULL
-    )
+    # Was a direct wgpuDevicePoll call through the backend's private libf.
+    buf._device._poll_wait()
 
     data2 = buf.read_mapped()
     buf.unmap()

@@ -44,6 +44,9 @@ class GPU:
             force_fallback_adapter (bool): prefer a (probably CPU) fallback.
             canvas: the canvas or context the adapter must be able to render to.
         """
+        by_name = self._adapter_by_name()
+        if by_name is not None:
+            return by_name
         options = {
             "power_preference": power_preference,
             "force_fallback_adapter": force_fallback_adapter,
@@ -51,6 +54,28 @@ class GPU:
         if canvas is not None:
             options["compatible_surface"] = _surface_of(canvas)
         return self._inst._call("request_adapter", options)
+
+    def _adapter_by_name(self):
+        """Honour ``WGPUPY_WGPU_ADAPTER_NAME``, if it is set.
+
+        Not part of WebGPU: it exists so a machine with several adapters can be
+        pinned to one, which is how wgpu-py's own CI selects the software
+        renderer. The name is matched against the adapter summary, so a
+        fragment like "llvmpipe" is enough. Spelled ``WGPUPY_`` rather than
+        ``WGPU_`` so it cannot clash with wgpu-native's own variables.
+        """
+        import os
+
+        name = os.getenv("WGPUPY_WGPU_ADAPTER_NAME")
+        if not name:
+            return None
+        from wgpu._runtime.awaitable import completed
+
+        adapters = self.enumerate_adapters_sync()
+        matching = [a for a in adapters if name in a.summary]
+        if not matching:
+            raise ValueError(f"Adapter with name '{name}' not found.")
+        return completed(matching[0], "adapter by name")
 
     def request_adapter_sync(
         self,

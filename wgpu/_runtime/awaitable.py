@@ -62,8 +62,8 @@ class WgpuPromise(GPUPromise):
 WgpuFuture = WgpuPromise
 
 
-def completed(value):
+def completed(value, title: str = "completed"):
     """A promise that is already resolved with ``value``."""
-    promise = GPUPromise("completed", None)
+    promise = GPUPromise(title, None)
     promise._set_input(value)
     return promise

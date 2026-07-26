@@ -150,7 +150,7 @@ __all__ = [
 class BindGroupDescriptor(Struct):
     label: str = ""
     layout: GPUBindGroupLayout
-    entries: list[structs.BindGroupEntryStruct]
+    entries: Sequence[structs.BindGroupEntryStruct]
 
 
 BindGroupDescriptorStruct = BindGroupDescriptor | dict
@@ -168,7 +168,7 @@ BindGroupEntryStruct = BindGroupEntry | dict
 @dataclass(kw_only=True, repr=False)
 class BindGroupLayoutDescriptor(Struct):
     label: str = ""
-    entries: list[structs.BindGroupLayoutEntryStruct]
+    entries: Sequence[structs.BindGroupLayoutEntryStruct]
 
 
 BindGroupLayoutDescriptorStruct = BindGroupLayoutDescriptor | dict
@@ -243,7 +243,7 @@ class CanvasConfiguration(Struct):
     device: GPUDevice
     format: enums.TextureFormatEnum
     usage: flags.TextureUsageFlags = '0x10'
-    view_formats: list[enums.TextureFormatEnum] = ()
+    view_formats: Sequence[enums.TextureFormatEnum] = ()
     color_space: str = "srgb"
     tone_mapping: structs.CanvasToneMappingStruct = None
     alpha_mode: enums.CanvasAlphaModeEnum = "opaque"
@@ -369,7 +369,7 @@ DepthStencilStateStruct = DepthStencilState | dict
 @dataclass(kw_only=True, repr=False)
 class DeviceDescriptor(Struct):
     label: str = ""
-    required_features: list[enums.FeatureNameEnum] = ()
+    required_features: Sequence[enums.FeatureNameEnum] = ()
     required_limits: dict[str, int | None] = None
     default_queue: structs.QueueDescriptorStruct = None
 
@@ -410,7 +410,7 @@ class FragmentState(Struct):
     module: GPUShaderModule
     entry_point: str = None
     constants: dict[str, float] = None
-    targets: list[structs.ColorTargetStateStruct]
+    targets: Sequence[structs.ColorTargetStateStruct]
 
 
 FragmentStateStruct = FragmentState | dict
@@ -456,7 +456,7 @@ PipelineErrorInitStruct = PipelineErrorInit | dict
 @dataclass(kw_only=True, repr=False)
 class PipelineLayoutDescriptor(Struct):
     label: str = ""
-    bind_group_layouts: list[GPUBindGroupLayout]
+    bind_group_layouts: Sequence[GPUBindGroupLayout]
     immediate_size: int = 0
 
 
@@ -514,7 +514,7 @@ RenderBundleDescriptorStruct = RenderBundleDescriptor | dict
 @dataclass(kw_only=True, repr=False)
 class RenderBundleEncoderDescriptor(Struct):
     label: str = ""
-    color_formats: list[enums.TextureFormatEnum]
+    color_formats: Sequence[enums.TextureFormatEnum]
     depth_stencil_format: enums.TextureFormatEnum = None
     sample_count: int = 1
     depth_read_only: bool = False
@@ -556,7 +556,7 @@ RenderPassDepthStencilAttachmentStruct = RenderPassDepthStencilAttachment | dict
 @dataclass(kw_only=True, repr=False)
 class RenderPassDescriptor(Struct):
     label: str = ""
-    color_attachments: list[structs.RenderPassColorAttachmentStruct]
+    color_attachments: Sequence[structs.RenderPassColorAttachmentStruct]
     depth_stencil_attachment: structs.RenderPassDepthStencilAttachmentStruct = None
     occlusion_query_set: GPUQuerySet = None
     timestamp_writes: structs.RenderPassTimestampWritesStruct = None
@@ -569,7 +569,7 @@ RenderPassDescriptorStruct = RenderPassDescriptor | dict
 @dataclass(kw_only=True, repr=False)
 class RenderPassLayout(Struct):
     label: str = ""
-    color_formats: list[enums.TextureFormatEnum]
+    color_formats: Sequence[enums.TextureFormatEnum]
     depth_stencil_format: enums.TextureFormatEnum = None
     sample_count: int = 1
 
@@ -651,7 +651,7 @@ ShaderModuleCompilationHintStruct = ShaderModuleCompilationHint | dict
 class ShaderModuleDescriptor(Struct):
     label: str = ""
     code: str
-    compilation_hints: list[structs.ShaderModuleCompilationHintStruct] = ()
+    compilation_hints: Sequence[structs.ShaderModuleCompilationHintStruct] = ()
 
 
 ShaderModuleDescriptorStruct = ShaderModuleDescriptor | dict
@@ -729,7 +729,7 @@ class TextureDescriptor(Struct):
     dimension: enums.TextureDimensionEnum = "2d"
     format: enums.TextureFormatEnum
     usage: flags.TextureUsageFlags
-    view_formats: list[enums.TextureFormatEnum] = ()
+    view_formats: Sequence[enums.TextureFormatEnum] = ()
     texture_binding_view_dimension: enums.TextureViewDimensionEnum = None
 
 
@@ -775,7 +775,7 @@ VertexAttributeStruct = VertexAttribute | dict
 class VertexBufferLayout(Struct):
     array_stride: int
     step_mode: enums.VertexStepModeEnum = "vertex"
-    attributes: list[structs.VertexAttributeStruct]
+    attributes: Sequence[structs.VertexAttributeStruct]
 
 
 VertexBufferLayoutStruct = VertexBufferLayout | dict
@@ -786,7 +786,7 @@ class VertexState(Struct):
     module: GPUShaderModule
     entry_point: str = None
     constants: dict[str, float] = None
-    buffers: list[structs.VertexBufferLayoutStruct] = ()
+    buffers: Sequence[structs.VertexBufferLayoutStruct] = ()
 
 
 VertexStateStruct = VertexState | dict

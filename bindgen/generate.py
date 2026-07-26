@@ -212,6 +212,10 @@ def generate_structs(spec, ffi, lib, bridge=None) -> str:
     # layout's type is "uniform" there, and merely absent in webgpu.json. The
     # public API's defaults are the IDL's, so they win where the C spec is silent.
     idl_defaults: dict[str, dict[str, str]] = {}
+    # Members the IDL marks ``required``. The C spec has no such notion -- every
+    # field of a C struct exists, zeroed -- so without this an omitted width
+    # reaches wgpu-native as a zero-sized texture rather than as an error.
+    idl_required: dict[str, set[str]] = {}
     if bridge is not None:
         for idl_struct, fields in bridge.idl.structs.items():
             spec_struct = bridge.structs.get(idl_struct)
@@ -219,8 +223,12 @@ def generate_structs(spec, ffi, lib, bridge=None) -> str:
                 continue
             for fname, attr in fields.items():
                 c_member = bridge.struct_fields.get((idl_struct, fname))
-                if c_member is not None and attr.default is not None:
+                if c_member is None:
+                    continue
+                if attr.default is not None:
                     idl_defaults.setdefault(spec_struct, {})[c_member] = attr.default
+                if attr.required:
+                    idl_required.setdefault(spec_struct, set()).add(c_member)
     if bridge is not None:
         for (idl_struct, idl_field), c_member in bridge.struct_fields.items():
             spec_struct = bridge.structs[idl_struct]
@@ -256,6 +264,10 @@ def generate_structs(spec, ffi, lib, bridge=None) -> str:
         "    default: object",
         "    array: bool",
         "    count_c: str | None  # C count field, for arrays",
+        "    # Marked ``required`` in the Web IDL. The C spec has no such notion --",
+        "    # every field of a C struct exists, zeroed -- so this is the only",
+        "    # thing standing between an omitted width and a zero-sized texture.",
+        "    required: bool = False",
         "",
         "",
         "@dataclass(frozen=True)",
@@ -291,7 +303,8 @@ def generate_structs(spec, ffi, lib, bridge=None) -> str:
                 assert count_c in c_fields, f"{c_name} has no count field {count_c}"
             members_src.append(
                 "        Member(py={!r}, c={!r}, kind={!r}, ref={!r}, pointer={!r}, "
-                "optional={!r}, default={!r}, array={!r}, count_c={!r}),".format(
+                "optional={!r}, default={!r}, array={!r}, count_c={!r}, "
+                "required={!r}),".format(
                     public_names.get(st["name"], {}).get(
                         c_field, naming.py_member_name(mem["name"])
                     ),
@@ -309,6 +322,7 @@ def generate_structs(spec, ffi, lib, bridge=None) -> str:
                     ),
                     is_array,
                     count_c,
+                    c_field in idl_required.get(st["name"], ()),
                 )
             )
         s_type = 0

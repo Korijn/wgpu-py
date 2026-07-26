@@ -390,7 +390,10 @@ def generate_api_structs(b: bridge.Bridge) -> str:
             lines.append("    pass")
         for fname, attr in fields.items():
             py = bridge.camel_to_snake(fname)
-            ann = b.idl.resolve_type(attr.typename)
+            # ``Sequence``, not ``list``, for the same reason method parameters
+            # are annotated that way: a tuple or a numpy array is just as
+            # welcome here, and the annotation should not claim otherwise.
+            ann = _annotate(b.idl, attr.typename)
             if attr.required:
                 lines.append(f"    {_ident(py)}: {ann}")
             else:

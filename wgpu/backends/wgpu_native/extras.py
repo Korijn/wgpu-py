@@ -10,11 +10,17 @@ from __future__ import annotations
 from wgpu._native import ffi as _ffi
 from wgpu._native import lib as _lib
 from wgpu._runtime.api import get_api
+from wgpu._runtime.enumbase import EnumType as _EnumType
 from wgpu._runtime.maps import EnumMap as _EnumMap
 
 
-class PipelineStatisticName:
-    """The statistics a statistics query set can record."""
+class PipelineStatisticName(metaclass=_EnumType):
+    """The statistics a statistics query set can record.
+
+    Hand-written because neither spec describes pipeline statistics, but it
+    carries the same metaclass as the generated enums -- so it iterates, and
+    answers ``in``, exactly like every other one.
+    """
 
     VertexShaderInvocations = "vertex-shader-invocations"
     ClipperInvocations = "clipper-invocations"
@@ -196,7 +202,18 @@ def enumerate_adapters(instance=None):
 
 
 def request_device_sync(adapter, trace_path=None, **kwargs):
-    """Request a device, optionally writing a wgpu-native API trace."""
+    """Request a device. ``trace_path`` is accepted but cannot be honoured.
+
+    API tracing was removed from wgpu itself (gfx-rs/wgpu#5974), and
+    wgpu-native's ``trace`` cargo feature is commented out waiting for it to
+    come back -- so there is nothing to enable here, at any layer. The argument
+    is kept, and refuses loudly rather than quietly writing nothing, so code
+    that asks for a trace finds out that it will not get one.
+    """
     if trace_path:
-        raise NotImplementedError("API tracing is not wired up yet")
+        raise NotImplementedError(
+            "wgpu-native cannot write API traces: the feature was removed from "
+            "wgpu upstream (gfx-rs/wgpu#5974) and is commented out in "
+            "wgpu-native's Cargo.toml until it returns."
+        )
     return adapter.request_device_sync(**kwargs)

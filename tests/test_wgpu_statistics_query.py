@@ -164,10 +164,16 @@ def test_enum_is_in_sync():
     Either fix PipelineStatisticsName or modify this test and explain what the difference
     is.
     """
-    from wgpu.backends.wgpu_native._mappings import enum_str2int
+    # enum_str2int used to be a generated mapping module. The equivalent table
+    # is now built alongside the hand-written enum in extras.py, and is checked
+    # against wgpu.h itself by bindgen/tests/test_extras_are_pinned.py -- so
+    # this compares the two halves that still have to agree. ``spellings`` and
+    # not the map's own keys: it caches the snake_case and CamelCase forms as
+    # they are used, so iterating it would depend on what ran before.
+    from wgpu.backends.wgpu_native.extras import _PIPELINE_STATISTICS
 
     enum_list = set(PipelineStatisticName)
-    native_list = set(enum_str2int["PipelineStatisticName"].keys())
+    native_list = set(_PIPELINE_STATISTICS.spellings)
     assert enum_list == native_list
 
 
