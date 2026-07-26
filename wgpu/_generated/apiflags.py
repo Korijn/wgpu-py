@@ -7,10 +7,11 @@
 """WebGPU flags: integer bitmasks. ``BufferUsage.MAP_READ | BufferUsage.COPY_DST``
 can also be written as ``"MAP_READ|COPY_DST"``."""
 
+from wgpu._api.enumbase import EnumType as _EnumType
 from wgpu._api.maps import FlagMap as _FlagMap
 
 
-class Flags:
+class Flags(metaclass=_EnumType):
     """Base class for wgpu flags."""
 
     def __init__(self):
