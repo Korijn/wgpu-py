@@ -91,3 +91,40 @@ def test_await_path_matches_sync(device):
 
     adapter = asyncio.run(main())
     assert type(adapter).__name__ == "GPUAdapter"
+
+
+def test_derived_chain_adapter(device):
+    """A field C expresses as a chained extension struct, derived not declared.
+
+    Regression: this was hand-written against a struct name that does not
+    exist, so every caller got a KeyError. Nothing pointed it out, because
+    nothing called it -- hence this test.
+    """
+    texture = device.create_texture(
+        size=(4, 4, 1),
+        format="rgba8unorm",
+        usage="TEXTURE_BINDING",
+        texture_binding_view_dimension="2d",
+    )
+    assert type(texture).__name__ == "GPUTexture"
+    assert texture.size == (4, 4, 1)
+
+
+def test_derived_nest_adapter(device):
+    """The web flattens the texel-copy layout fields; C nests them."""
+    texture = device.create_texture(
+        size=(64, 4, 1), format="rgba8unorm", usage="COPY_DST|COPY_SRC"
+    )
+    data = bytes(range(256)) * 4
+    device.queue.write_texture(
+        {"texture": texture},
+        data,
+        {"offset": 0, "bytes_per_row": 256, "rows_per_image": 4},
+        (64, 4, 1),
+    )
+    read = device.queue.read_texture(
+        {"texture": texture},
+        {"offset": 0, "bytes_per_row": 256, "rows_per_image": 4},
+        (64, 4, 1),
+    )
+    assert bytes(read) == data

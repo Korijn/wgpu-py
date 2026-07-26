@@ -33,8 +33,9 @@ class StructDescriptor:
     c_name: str
     category: str    # extensible|standalone|extension|extensible_callback_arg
     members: tuple = field(default_factory=tuple)
-    # (public field, adapter name) for fields whose *shape* differs
-    # between the Web and C specs; see wgpu._api.adapt.
+    # (public field, adapter, target) for fields whose *shape* differs
+    # between the Web and C specs; see wgpu._api.adapt. The target is
+    # the extension struct to chain or the member to nest under.
     adapters: tuple = field(default_factory=tuple)
     # The WGPUSType tag, for structs that chain onto another.
     s_type: int = 0
@@ -72,7 +73,7 @@ STRUCTS['bind_group_descriptor'] = StructDescriptor(
 STRUCTS['bind_group_entry'] = StructDescriptor(
     c_name='WGPUBindGroupEntry',
     category='extensible',
-    adapters=(('resource', 'bind_group_resource'),),
+    adapters=(('resource', 'bind_group_resource', ''),),
     members=(
         Member(py='binding', c='binding', kind='prim', ref='uint32', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='buffer', c='buffer', kind='object', ref='buffer', pointer=None, optional=True, default=None, array=False, count_c=None),
@@ -95,7 +96,7 @@ STRUCTS['bind_group_layout_descriptor'] = StructDescriptor(
 STRUCTS['bind_group_layout_entry'] = StructDescriptor(
     c_name='WGPUBindGroupLayoutEntry',
     category='extensible',
-    adapters=(('external_texture', 'ignored'),),
+    adapters=(('external_texture', 'ignored', ''),),
     members=(
         Member(py='binding', c='binding', kind='prim', ref='uint32', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='visibility', c='visibility', kind='bitflag', ref='shader_stage', pointer=None, optional=False, default=0, array=False, count_c=None),
@@ -517,7 +518,7 @@ STRUCTS['render_pass_depth_stencil_attachment'] = StructDescriptor(
 STRUCTS['render_pass_descriptor'] = StructDescriptor(
     c_name='WGPURenderPassDescriptor',
     category='extensible',
-    adapters=(('max_draw_count', 'max_draw_count'),),
+    adapters=(('max_draw_count', 'chain', 'render_pass_max_draw_count'),),
     members=(
         Member(py='label', c='label', kind='string', ref=None, pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='color_attachments', c='colorAttachments', kind='struct', ref='render_pass_color_attachment', pointer='immutable', optional=False, default=None, array=True, count_c='colorAttachmentCount'),
@@ -553,7 +554,7 @@ STRUCTS['render_pipeline_descriptor'] = StructDescriptor(
 STRUCTS['request_adapter_options'] = StructDescriptor(
     c_name='WGPURequestAdapterOptions',
     category='extensible',
-    adapters=(('xr_compatible', 'ignored'),),
+    adapters=(('xr_compatible', 'ignored', ''),),
     members=(
         Member(py='feature_level', c='featureLevel', kind='enum', ref='feature_level', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='power_preference', c='powerPreference', kind='enum', ref='power_preference', pointer=None, optional=False, default=None, array=False, count_c=None),
@@ -601,7 +602,7 @@ STRUCTS['sampler_descriptor'] = StructDescriptor(
 STRUCTS['shader_module_descriptor'] = StructDescriptor(
     c_name='WGPUShaderModuleDescriptor',
     category='extensible',
-    adapters=(('code', 'shader_source'), ('compilation_hints', 'ignored')),
+    adapters=(('code', 'shader_source', ''), ('compilation_hints', 'ignored', '')),
     members=(
         Member(py='label', c='label', kind='string', ref=None, pointer=None, optional=False, default=None, array=False, count_c=None),
     ),
@@ -785,7 +786,7 @@ STRUCTS['surface_texture'] = StructDescriptor(
 STRUCTS['texel_copy_buffer_info'] = StructDescriptor(
     c_name='WGPUTexelCopyBufferInfo',
     category='standalone',
-    adapters=(('bytes_per_row', 'texel_copy_layout'), ('offset', 'texel_copy_layout'), ('rows_per_image', 'texel_copy_layout')),
+    adapters=(('bytes_per_row', 'nest', 'layout'), ('offset', 'nest', 'layout'), ('rows_per_image', 'nest', 'layout')),
     members=(
         Member(py='layout', c='layout', kind='struct', ref='texel_copy_buffer_layout', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='buffer', c='buffer', kind='object', ref='buffer', pointer=None, optional=False, default=None, array=False, count_c=None),
@@ -855,7 +856,7 @@ STRUCTS['texture_component_swizzle_descriptor'] = StructDescriptor(
 STRUCTS['texture_descriptor'] = StructDescriptor(
     c_name='WGPUTextureDescriptor',
     category='extensible',
-    adapters=(('texture_binding_view_dimension', 'texture_binding_view_dim'),),
+    adapters=(('texture_binding_view_dimension', 'chain', 'texture_binding_view_dimension'),),
     members=(
         Member(py='label', c='label', kind='string', ref=None, pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='usage', c='usage', kind='bitflag', ref='texture_usage', pointer=None, optional=False, default=0, array=False, count_c=None),
@@ -871,7 +872,7 @@ STRUCTS['texture_descriptor'] = StructDescriptor(
 STRUCTS['texture_view_descriptor'] = StructDescriptor(
     c_name='WGPUTextureViewDescriptor',
     category='extensible',
-    adapters=(('swizzle', 'ignored'),),
+    adapters=(('swizzle', 'ignored', ''),),
     members=(
         Member(py='label', c='label', kind='string', ref=None, pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='format', c='format', kind='enum', ref='texture_format', pointer=None, optional=False, default=None, array=False, count_c=None),

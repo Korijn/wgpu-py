@@ -226,12 +226,12 @@ def generate_structs(spec, ffi, lib, bridge=None) -> str:
             spec_struct = bridge.structs[idl_struct]
             public = from_bridge.camel_to_snake(idl_field)
             public_names.setdefault(spec_struct, {})[c_member] = public
-        for (idl_struct, idl_field), adapter in bridge.shape_adapted.items():
+        for (idl_struct, idl_field), (adapter, target) in bridge.shape_adapted.items():
             spec_struct = bridge.structs.get(idl_struct)
             if spec_struct is None:
                 continue  # a field of a web-only struct
             public = from_bridge.camel_to_snake(idl_field)
-            adapters.setdefault(spec_struct, []).append((public, adapter))
+            adapters.setdefault(spec_struct, []).append((public, adapter, target))
     lines = [
         _BANNER,
         '"""Declarative descriptors for every wgpu-native struct.',
@@ -263,8 +263,9 @@ def generate_structs(spec, ffi, lib, bridge=None) -> str:
         "    c_name: str",
         "    category: str    # extensible|standalone|extension|extensible_callback_arg",
         "    members: tuple = field(default_factory=tuple)",
-        "    # (public field, adapter name) for fields whose *shape* differs",
-        "    # between the Web and C specs; see wgpu._api.adapt.",
+        "    # (public field, adapter, target) for fields whose *shape* differs",
+        "    # between the Web and C specs; see wgpu._api.adapt. The target is",
+        "    # the extension struct to chain or the member to nest under.",
         "    adapters: tuple = field(default_factory=tuple)",
         "    # The WGPUSType tag, for structs that chain onto another.",
         "    s_type: int = 0",
@@ -300,7 +301,10 @@ def generate_structs(spec, ffi, lib, bridge=None) -> str:
                     mem.get("pointer"),
                     bool(mem.get("optional", False)),
                     _resolve_default(
-                        mem, kind, ref, lib,
+                        mem,
+                        kind,
+                        ref,
+                        lib,
                         idl_defaults.get(st["name"], {}).get(c_field),
                     ),
                     is_array,

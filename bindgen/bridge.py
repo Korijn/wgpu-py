@@ -97,23 +97,23 @@ STRUCT_ALIASES = {
 #: unhandled mismatch is a hard failure rather than a silently dropped field.
 SHAPE_ADAPTED_FIELDS = {
     # IDL passes a union (buffer | {buffer,offset,size} | sampler | textureView);
-    # C has one flat struct with a slot per resource kind.
+    # C has one flat struct with a slot per resource kind. No declaration in
+    # either spec says which slot a given value belongs in -- that is read off
+    # the Python object's type at runtime.
     ("BindGroupEntry", "resource"): "bind_group_resource",
-    # IDL carries the WGSL source inline; C chains a WGPUShaderSourceWGSL struct.
+    # `code` chains, and the chaining itself is derivable -- but *two* extension
+    # structs offer a `code` member (WGSL and SPIR-V), so which one applies is
+    # decided by the value's Python type, not by the specs.
     ("ShaderModuleDescriptor", "code"): "shader_source",
     ("ShaderModuleDescriptor", "compilationHints"): "ignored",
-    # IDL flattens the layout fields; C nests them in a `layout` member.
-    ("TexelCopyBufferInfo", "offset"): "texel_copy_layout",
-    ("TexelCopyBufferInfo", "bytesPerRow"): "texel_copy_layout",
-    ("TexelCopyBufferInfo", "rowsPerImage"): "texel_copy_layout",
-    # C expresses these as chained extension structs.
-    ("RenderPassDescriptor", "maxDrawCount"): "max_draw_count",
-    ("TextureDescriptor", "textureBindingViewDimension"): "texture_binding_view_dim",
     # Web-only: XR presentation, texture-view swizzling, video textures.
     ("RequestAdapterOptions", "xrCompatible"): "ignored",
     ("TextureViewDescriptor", "swizzle"): "ignored",
     ("BindGroupLayoutEntry", "externalTexture"): "ignored",
 }
+# Everything else that once lived here -- maxDrawCount, textureBindingViewDimension
+# and the three TexelCopyBufferInfo layout fields -- is now derived by
+# _derive_adapter() below, from declarations webgpu.json already makes.
 
 #: Methods that only make sense on the web (they take browser image sources).
 IDL_ONLY_METHODS = {
@@ -152,6 +152,48 @@ def camel_to_snake(name: str) -> str:
     return "".join(out).lstrip("_")
 
 
+def _derive_adapter(spec_structs: dict, c_struct: str, field: str):
+    """Work out where a field with no matching C member actually goes.
+
+    webgpu.json says more than "here are the members". It declares which
+    structs are extensions and what they ``extends``, and it gives every member
+    a type -- so when the IDL has a field the C struct lacks, the C spec itself
+    usually says where it went:
+
+    * an extension struct that extends this one and carries the field
+      (``maxDrawCount`` -> ``WGPURenderPassMaxDrawCount``); or
+    * a member of this struct whose own struct type carries the field
+      (``bytesPerRow`` -> the nested ``layout``).
+
+    Returns ``(adapter, target)`` when exactly one candidate exists, else None
+    -- ambiguity is not resolved by guessing, it is declared in
+    :data:`SHAPE_ADAPTED_FIELDS` and handled at runtime.
+    """
+    wanted = _key(field)
+
+    chain = [
+        st["name"]
+        for st in spec_structs.values()
+        if st.get("type") == "extension"
+        and c_struct in (st.get("extends") or ())
+        and wanted in {_key(m["name"]) for m in st.get("members", ())}
+    ]
+    nest = []
+    for mem in spec_structs.get(c_struct, {}).get("members", ()):
+        type_ = mem.get("type", "")
+        if not type_.startswith("struct."):
+            continue
+        inner = spec_structs.get(type_.split(".", 1)[1], {})
+        if wanted in {_key(m["name"]) for m in inner.get("members", ())}:
+            nest.append(mem["name"])
+
+    if len(chain) == 1 and not nest:
+        return "chain", chain[0]
+    if len(nest) == 1 and not chain:
+        return "nest", nest[0]
+    return None
+
+
 @dataclass
 class Bridge:
     """Resolved correspondences between the IDL and the C spec."""
@@ -174,8 +216,16 @@ class Bridge:
     classes: dict[str, str] = field(default_factory=dict)
     #: (IDL class, IDL method) -> C spec method name.
     methods: dict[tuple[str, str], str] = field(default_factory=dict)
-    #: (IDL struct, IDL field) -> name of the runtime adapter that reshapes it.
-    shape_adapted: dict[tuple[str, str], str] = field(default_factory=dict)
+    #: (IDL struct, IDL field) -> ``(adapter, target)``. The adapter names the
+    #: runtime reshaping in :mod:`wgpu._api.adapt`; the target is the thing it
+    #: acts on -- the extension struct to chain or the member to nest under --
+    #: and is empty for adapters that need no target.
+    shape_adapted: dict[tuple[str, str], tuple[str, str]] = field(default_factory=dict)
+    #: Subset of ``shape_adapted`` that was derived from webgpu.json rather
+    #: than declared in :data:`SHAPE_ADAPTED_FIELDS`. Reported by the generator.
+    derived_adapters: dict[tuple[str, str], tuple[str, str]] = field(
+        default_factory=dict
+    )
 
     #: Things present in the IDL with no C counterpart, as
     #: ``(category, name)`` pairs. Expected to be empty apart from the
@@ -246,16 +296,21 @@ def build() -> Bridge:
             for m in spec_structs[spec_name].get("members", [])
         }
         for fname in fields:
-            if (idl_name, fname) in SHAPE_ADAPTED_FIELDS:
-                b.shape_adapted[(idl_name, fname)] = SHAPE_ADAPTED_FIELDS[
-                    (idl_name, fname)
-                ]
+            declared = SHAPE_ADAPTED_FIELDS.get((idl_name, fname))
+            if declared is not None:
+                b.shape_adapted[(idl_name, fname)] = (declared, "")
                 continue
             member = members.get(_key(fname))
-            if member is None:
+            if member is not None:
+                b.struct_fields[(idl_name, fname)] = member
+                continue
+            # No member of that name -- but the C spec may say where it went.
+            derived = _derive_adapter(spec_structs, spec_name, fname)
+            if derived is None:
                 b.unmatched.append(("struct-field", f"{idl_name}.{fname}"))
             else:
-                b.struct_fields[(idl_name, fname)] = member
+                b.shape_adapted[(idl_name, fname)] = derived
+                b.derived_adapters[(idl_name, fname)] = derived
 
     # -- classes & methods -------------------------------------------------
     for idl_name, interface in idl.classes.items():

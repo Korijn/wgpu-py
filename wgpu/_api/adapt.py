@@ -1,10 +1,16 @@
 """Reshape the few values whose Web and C forms genuinely differ.
 
 Most of the public API maps onto C by renaming alone, which the generator does
-ahead of time. A handful of fields do not: the web passes a union where C has a
-flat struct, keeps a field inline where C chains an extension struct, or nests
-where C flattens. Those are listed in ``bindgen.bridge.SHAPE_ADAPTED_FIELDS``,
-recorded per struct by the generator, and transformed here.
+ahead of time. A handful of fields do not: the web keeps a field inline where C
+chains an extension struct, flattens where C nests, or passes a union where C
+has a slot per type.
+
+The first two are *derived*, not listed: webgpu.json declares which structs
+extend which, and gives every member a type, so the generator can find where a
+missing field went and record the target alongside the adapter. Adding a
+chained extension upstream therefore needs no edit here. Only the shapes no
+declaration covers -- where the choice depends on a runtime value -- are named
+in ``bindgen.bridge.SHAPE_ADAPTED_FIELDS`` and written out below.
 
 Each adapter takes the public mapping and returns a C-shaped one. Anything a
 spec bump adds that is not handled here fails loudly at generation time rather
@@ -17,14 +23,42 @@ from __future__ import annotations
 def reshape(builder, desc, mapping: dict, keep: list) -> dict:
     """Apply every adapter this struct declares, returning a C-shaped mapping."""
     out = dict(mapping)
-    for field, adapter in desc.adapters:
+    for field, adapter, target in desc.adapters:
         if adapter == "ignored":
             # Present on the web, meaningless natively (XR, video textures,
             # view swizzles). Accepted and dropped, so web code still runs.
             out.pop(field, None)
-            continue
-        _ADAPTERS[adapter](builder, out, keep)
+        elif adapter == "chain":
+            _chain(out, field, target)
+        elif adapter == "nest":
+            _nest(out, field, target)
+        else:
+            _ADAPTERS[adapter](builder, out, keep)
     return out
+
+
+def _chain(out: dict, field: str, target: str) -> None:
+    """Move an inline field into the extension struct C expects it in."""
+    value = out.pop(field, None)
+    if value is None:
+        return
+    spec_name, mapping = out.get("_chain") or (target, {})
+    if spec_name != target:
+        raise ValueError(f"cannot chain both {spec_name} and {target}")
+    mapping[field] = value
+    out["_chain"] = (target, mapping)
+
+
+def _nest(out: dict, field: str, target: str) -> None:
+    """Move a field the web flattens into the member C nests it under."""
+    if field not in out:
+        return
+    value = out.pop(field)
+    if value is None:
+        return
+    inner = out.get(target)
+    # The nested member may also have been given whole; merge, do not replace.
+    out[target] = {**inner, field: value} if inner else {field: value}
 
 
 def _bind_group_resource(builder, out: dict, keep: list) -> None:
@@ -83,39 +117,10 @@ def _shader_source(builder, out: dict, keep: list) -> None:
     )
 
 
-def _texel_copy_layout(builder, out: dict, keep: list) -> None:
-    """The web flattens the layout fields; C nests them in ``layout``."""
-    layout = dict(out.get("layout") or {})
-    for field in ("offset", "bytes_per_row", "rows_per_image"):
-        if field in out:
-            value = out.pop(field)
-            if value is not None:
-                layout[field] = value
-    if layout:
-        out["layout"] = layout
-
-
-def _max_draw_count(builder, out: dict, keep: list) -> None:
-    """A plain field on the web; a chained struct in C."""
-    value = out.pop("max_draw_count", None)
-    if value is not None:
-        out["_chain"] = ("render_pass_max_draw_count", {"max_draw_count": value})
-
-
-def _texture_binding_view_dim(builder, out: dict, keep: list) -> None:
-    """Pinning a texture's binding view dimension is a chained struct in C."""
-    value = out.pop("texture_binding_view_dimension", None)
-    if value is not None:
-        out["_chain"] = (
-            "texture_binding_view_dimension_descriptor",
-            {"texture_binding_view_dimension": value},
-        )
-
-
+#: Adapters for shapes no declaration in either spec covers, because the
+#: correct C form depends on the runtime value: which slot of a union a
+#: resource belongs in, and whether shader source is WGSL or SPIR-V.
 _ADAPTERS = {
     "bind_group_resource": _bind_group_resource,
     "shader_source": _shader_source,
-    "texel_copy_layout": _texel_copy_layout,
-    "max_draw_count": _max_draw_count,
-    "texture_binding_view_dim": _texture_binding_view_dim,
 }

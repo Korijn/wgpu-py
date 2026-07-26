@@ -19,9 +19,31 @@ Two specs, each answering the question it is actually authoritative for:
 `bindgen/bridge.py` connects them with a single normalising rule, and **nothing
 goes unmatched**: 30 enums / 268 enum values / 50 structs / 185 fields / 20
 classes / 52 methods resolve automatically. The genuine divergences are
-declared rather than guessed — web-only names, four struct aliases, and 11
+declared rather than guessed — web-only names, four struct aliases, and six
 fields whose *shape* differs. A spec bump that breaks a correspondence fails
 the build (`test_spec_bridge.py`) instead of quietly emitting less.
+
+Shape differences are themselves derived where the C spec already answers them.
+When an IDL field has no C member of that name, `webgpu.json` usually says
+where it went — an extension struct declares it `extends` this one, or a
+member's own struct type carries the field — so the generator finds the target
+instead of being told it:
+
+| IDL field | derived as |
+| --- | --- |
+| `RenderPassDescriptor.maxDrawCount` | chain `WGPURenderPassMaxDrawCount` |
+| `TextureDescriptor.textureBindingViewDimension` | chain `WGPUTextureBindingViewDimension` |
+| `TexelCopyBufferInfo.{offset,bytesPerRow,rowsPerImage}` | nest under `layout` |
+
+Only two shapes remain declared, because no declaration can settle them — they
+depend on the runtime *value*: which slot of the binding-resource union a value
+belongs in, and whether shader source is WGSL or SPIR-V (two extension structs
+both offer `code`, and the rule refuses to guess between them).
+
+This is not tidiness for its own sake. The hand-written version of
+`textureBindingViewDimension` named a struct that does not exist, so the field
+raised `KeyError` for every caller and no test noticed. A derived target cannot
+drift from the spec that way.
 
 Because the mapping is resolved at generation time, the runtime does no name
 translation: generated code already speaks C-side member names and integers.
@@ -150,6 +172,11 @@ Three more used to be on that list -- `writeBuffer`, `writeTexture` and
 API passes a buffer plus an optional `(dataOffset, size)` window where C wants
 a pointer and a byte count. One rule replaced three functions, so the next spec
 revision that adds a data-taking method gets it free.
+
+The same went for the struct *shape* adapters: five of seven were replaced by
+two rules read off `webgpu.json` (see above), leaving only the two that depend
+on a runtime value. `wgpu/_api/adapt.py` shrank from five bespoke functions to
+two generic mechanisms plus those two.
 
 The wgpu-native extras stay hand-written on purpose. Deriving module-level
 function names from a C header would be a naming heuristic rather than
