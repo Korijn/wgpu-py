@@ -186,6 +186,19 @@ class GPUPromise(Awaitable[AwaitedType], Generic[AwaitedType]):
     def __repr__(self):
         return f"<GPUPromise '{self._title}' {self._state} at {hex(id(self))}>"
 
+    def _derive(self, title: str, callback: Callable | None) -> GPUPromise:
+        """A promise of this same kind, for ``then()``/``catch()`` to chain to.
+
+        A subclass that takes more than a title and a handler must override
+        this, rather than let its constructor be called positionally from here
+        -- ``WgpuPromise`` takes an event pump second, so calling it that way
+        put the user's callback in the pump slot and left the handler unset.
+        The chained promise then resolved without ever calling back.
+        """
+        return self.__class__(
+            title, callback, _call_soon_threadsafe=self._call_soon_threadsafe
+        )
+
     def __call__(self, callback):
         # Create new promise that invokes the callback
         self.then(callback)
@@ -366,9 +379,7 @@ class GPUPromise(Awaitable[AwaitedType], Generic[AwaitedType]):
             title = self._title + " -> " + callback_name
 
         # Create new promise
-        new_promise = self.__class__(
-            title, callback, _call_soon_threadsafe=self._call_soon_threadsafe
-        )
+        new_promise = self._derive(title, callback)
         self._chain(new_promise)
 
         if error_callback is not None:
@@ -394,9 +405,7 @@ class GPUPromise(Awaitable[AwaitedType], Generic[AwaitedType]):
         title = "Catcher for " + self._title
 
         # Create new promise
-        new_promise = self.__class__(
-            title, callback, _call_soon_threadsafe=self._call_soon_threadsafe
-        )
+        new_promise = self._derive(title, callback)
 
         # Custom chain
         with self._lock:

@@ -72,7 +72,7 @@ dict lookup, with no Python-level call on the success path.
 | Public classes | generated from the IDL, signatures match the classic ones |
 | Enums / flags / structs | 34 / 5 / 60, content-identical to classic |
 | Validation errors | raised as `GPUValidationError`, not process aborts |
-| Async | `await`, `then()`, and `sync_wait()`, on asyncio and trio |
+| Async | `await`, `then()`, and `sync_wait()`, on asyncio and trio; a per-device poll thread drives callbacks nobody is awaiting |
 | Compute pipeline | verified end to end on lavapipe: WGSL, bind groups, dispatch, byte-exact readback |
 | Hand-written surface | ~6 methods and ~14 properties, each a documented spec divergence |
 
@@ -210,11 +210,11 @@ which would abort the process rather than raise.
 
 ## Porting the historical suite
 
-Done, bar one file. **`tests/` passes in full** -- 232 passed, 1 skipped, no
-errors and no crashes -- from a suite that would not even collect. **`tests_mem`
-passes in full** too (38 passed, 4 skipped for a missing GUI toolkit or an
-unimplemented object), where before it could not be imported at all. The
-exception is `test_wgpu_native_poller.py`; see "What is left".
+Done. **`tests/` passes in full** -- 237 passed, 1 skipped, no errors, no
+crashes and nothing excluded -- from a suite that would not even collect.
+**`tests_mem` passes in full** too (38 passed, 4 skipped for a missing GUI
+toolkit or an unimplemented object), where before it could not be imported at
+all.
 
 It has earned its keep repeatedly, finding bugs nothing else did:
 
@@ -320,6 +320,35 @@ things, which is the argument for porting rather than discarding:
   was no way to ask what the real values were -- and the "expected ..." message
   grew every time someone spelled a name differently.
 
+### `then()` never fired
+
+The last file to be ported, `test_wgpu_native_poller.py`, turned out to be
+covering the biggest hole of the lot, and it took two bugs at once:
+
+* **Nothing drove wgpu-native's event queue** unless someone was awaiting a
+  promise. `then()` is fire-and-forget by definition, so its callback simply
+  never ran.
+* **`then()` built the chained promise positionally** -- `self.__class__(title,
+  callback)` -- and `WgpuPromise` takes an event pump second. The callback
+  landed in the pump slot and the handler was left unset, so even once the
+  queue *was* driven, the chained promise resolved without calling back.
+
+The fix for the first is the polling thread the classic backend had, restored:
+it blocks in `wgpuDevicePoll(wait=True)` while at least one operation is
+outstanding, and sleeps otherwise. A thread rather than a timer on the event
+loop, because there is no portable way to start one -- wgpu-py supports trio,
+where every task needs a nursery that only the caller's own code can open. The
+fix for the second is a `_derive()` hook that subclasses override, so the
+constructor is never called positionally across the class boundary.
+
+Both were invisible because all sixteen `then()` tests built a `GPUPromise` by
+hand and resolved it by hand; not one drove a real wgpu-native callback. There
+is now a test that does, and it fails if either bug is reintroduced.
+
+The whole `call_soon_threadsafe` apparatus in `wgpu/_api/promise.py` exists to
+marshal a result from that thread back to the event loop. Without the thread it
+was resolving nothing.
+
 API tracing turned out not to be a gap in this rewrite at all: wgpu removed the
 feature (gfx-rs/wgpu#5974) and wgpu-native's `trace` cargo feature is commented
 out waiting for it to return. `request_device_sync(adapter, trace_path)` now
@@ -360,18 +389,8 @@ the check that keeps "fully generated" true rather than aspirational.
 
 ## What is left
 
-1. **The polling thread.** `tests/test_wgpu_native_poller.py` is the one file
-   that still does not collect: it imports `wgpu.backends.wgpu_native._poller`,
-   a thread that polled a device only while async work was outstanding, so
-   callbacks fired without anyone awaiting them. This design instead pumps from
-   the awaiting task, which resolves every promise the suite exercises but does
-   nothing for a promise nobody awaits, and does its waiting on the event-loop
-   thread rather than off it. Restoring the thread is an architectural choice
-   about how async work is driven, not a test port, so it is left as one --
-   the module is self-contained (~120 lines of pure threading) and its test
-   file is the specification for it.
-2. Push constants.
-3. Descriptors that still marshal at runtime (arrays and nested structs) could
+1. Push constants.
+2. Descriptors that still marshal at runtime (arrays and nested structs) could
    use the same compiled bodies as the flat ones.
 
 wgpu-native's own extension structs (`WGPUShaderSourceGLSL` and the `*Extras`

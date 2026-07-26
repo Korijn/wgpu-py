@@ -23,6 +23,22 @@ class WgpuPromise(GPUPromise):
         super().__init__(title, handler, **kwargs)
         self._pump = pump
 
+    def _derive(self, title, callback):
+        """Chain to another promise of this kind, keeping the event pump.
+
+        The base implementation constructs ``self.__class__(title, callback)``,
+        which would land the callback in the ``pump`` slot here and leave the
+        handler unset -- so the chained promise resolved without ever calling
+        back. Passing the pump on also means ``sync_wait()`` still works on the
+        result of a ``then()``.
+        """
+        return WgpuPromise(
+            title,
+            self._pump,
+            callback,
+            _call_soon_threadsafe=self._call_soon_threadsafe,
+        )
+
     def _sync_wait(self):
         # Pump until the callback fires. The backoff keeps a long wait from
         # spinning a core, while staying responsive for the common fast case.

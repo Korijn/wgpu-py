@@ -291,6 +291,12 @@ class Invoker:
         if pump is None:
             raise RuntimeError(f"{method.py}() is async but no event pump is available")
         future = WgpuPromise(method.py, pump)
+        # Claim the device's poll thread for as long as this is outstanding, so
+        # the callback fires even if nobody awaits the promise -- which is the
+        # only way ``then()`` can ever run. Dropped in the callback below, and
+        # again when the promise is collected, so an abandoned promise does not
+        # keep the thread awake.
+        token = _poll_token(caller)
         info = self.ffi.new(method.callback_info_c + " *")
         info.mode = self.lib.WGPUCallbackMode_AllowProcessEvents
 
@@ -320,13 +326,30 @@ class Invoker:
                     future._wgpu_set_input(int(status))
             except BaseException as exc:
                 future._wgpu_set_error(exc)
+            finally:
+                if token is not None:
+                    token.set_done()
 
         info.callback = _cb
         # Keep everything the pending callback depends on alive until it fires
-        # (including the caller, whose ancestry backs the event pump).
-        future._keep = (info, _cb, keep, caller)
+        # (including the caller, whose ancestry backs the event pump, and the
+        # poll token that is driving it).
+        future._keep = (info, _cb, keep, caller, token)
         cfunc(self_handle, *c_args, info[0])
         return future
+
+
+def _poll_token(caller):
+    """A claim on the poll thread of the device this call belongs to.
+
+    ``None`` when there is no device to poll -- requesting an adapter or a
+    device is driven by the instance, and happens before any device exists.
+    """
+    if caller is None:
+        return None
+    device = caller._device
+    poller = device._poller if device is not None else None
+    return poller.get_token() if poller is not None else None
 
 
 def _descriptor_label(py_args) -> str:

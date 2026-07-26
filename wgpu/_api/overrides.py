@@ -11,6 +11,7 @@ from __future__ import annotations
 from wgpu._api.base import GPUHandle
 from wgpu._coreutils import logger
 from wgpu._native import ffi as _ffi
+from wgpu._native import lib as _lib
 
 _NULL = _ffi.NULL
 
@@ -115,6 +116,55 @@ def eager_queue(init):
     init_with_queue.__name__ = init.__name__
     init_with_queue.__doc__ = init.__doc__
     return init_with_queue
+
+
+def with_poll_thread(init):
+    """Start the device's poll thread as it is made.
+
+    See ``wgpu.backends.wgpu_native._poller``: without it, a completion
+    callback only runs while someone is awaiting the promise, so ``then()``
+    never fires at all.
+    """
+
+    def init_with_poller(self, *args, **kwargs):
+        init(self, *args, **kwargs)
+        from wgpu.backends.wgpu_native._poller import PollThread
+
+        handle, lib, null = self._handle, _lib, _NULL
+
+        def poll(block, _handle=handle, _lib=lib, _null=null):
+            # Closes over the raw handle rather than the device, so the thread
+            # cannot keep the device alive -- which would make the two wait on
+            # each other forever. ``stop_poll_thread`` guarantees the thread is
+            # gone before the handle is released, so this never dangles.
+            _lib.wgpuDevicePoll(_handle, block, _null)
+
+        self._poller = PollThread(poll)
+        self._poller.start()
+
+    init_with_poller.__name__ = init.__name__
+    init_with_poller.__doc__ = init.__doc__
+    return init_with_poller
+
+
+def stop_poll_thread(func):
+    """Stop the poll thread before the device handle stops being valid.
+
+    Wraps both ``destroy()`` and ``_release()``. The thread holds the handle
+    raw and may be inside ``wgpuDevicePoll`` right now; polling a device that
+    has been released or destroyed aborts the process rather than raising, so
+    this has to happen first, and has to join.
+    """
+
+    def stop_then(self, *args, **kwargs):
+        poller, self._poller = self._poller, None
+        if poller is not None:
+            poller.stop()
+        return func(self, *args, **kwargs)
+
+    stop_then.__name__ = func.__name__
+    stop_then.__doc__ = func.__doc__
+    return stop_then
 
 
 @property

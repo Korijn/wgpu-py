@@ -46,6 +46,12 @@ from wgpu._runtime.errors import (
 # -- wgpu-py additions to the WebGPU API -------------------------------------
 
 GPUDevice.__init__ = _ov.eager_queue(GPUDevice.__init__)
+# wgpu-native runs completion callbacks only while its queue is pumped, and a
+# then() handler has nobody to pump for it. Both teardown paths stop the thread
+# before the handle it holds stops being valid.
+GPUDevice.__init__ = _ov.with_poll_thread(GPUDevice.__init__)
+GPUDevice.destroy = _ov.stop_poll_thread(GPUDevice.destroy)
+GPUDevice._release = _ov.stop_poll_thread(GPUDevice._release)
 GPUDevice.create_buffer = _ov.track_mapped_at_creation(GPUDevice.create_buffer)
 GPUCommandEncoder.begin_render_pass = _ov.drop_inapplicable_aspect_ops(
     GPUCommandEncoder.begin_render_pass

@@ -70,6 +70,9 @@ class GPUHandle(Mixin):
         # for good, so releasing it would free it twice. See
         # bindgen.paths.destroy_consumes_handle.
         "_handle_consumed",
+        # A device's poll thread, which drives its completion callbacks while
+        # anything is outstanding. See wgpu.backends.wgpu_native._poller.
+        "_poller",
     )
 
     _spec_name = ""
@@ -100,6 +103,7 @@ class GPUHandle(Mixin):
         self._mapped_views = []
         self._retained = None
         self._handle_consumed = False
+        self._poller = None
         self._live[0] += 1
 
     # -- identity ----------------------------------------------------------
