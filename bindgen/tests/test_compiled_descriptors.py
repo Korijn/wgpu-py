@@ -1,0 +1,113 @@
+"""Methods that build their descriptor inline must still behave identically.
+
+The interpreted builder walks a struct descriptor on every call. For structs
+whose members are all settable in one statement, the generator does that walk
+once and emits straight-line code instead. That skips the runtime builder
+entirely, so the behaviour it used to provide -- labels, defaults, enum
+validation, error timing -- is asserted here rather than assumed.
+"""
+
+import sys
+
+import pytest
+
+from bindgen import paths
+from bindgen.generate import GENERATED_DIR
+
+pytestmark = pytest.mark.skipif(
+    not (GENERATED_DIR / "apiclasses.py").exists()
+    or not list((paths.REPO_ROOT / "wgpu" / "_native").glob("_wgpu.*")),
+    reason="run bindgen.ffi_build + bindgen.generate first",
+)
+
+
+@pytest.fixture(scope="module")
+def device():
+    sys.path.insert(0, str(paths.REPO_ROOT))
+    import wgpu
+
+    adapter = wgpu.gpu.request_adapter_sync()
+    if adapter is None:
+        pytest.skip("no adapter available")
+    return adapter.request_device_sync()
+
+
+@pytest.fixture(scope="module")
+def source():
+    return (GENERATED_DIR / "apiclasses.py").read_text()
+
+
+def test_create_buffer_is_actually_compiled(source):
+    """Guard the premise: if this stops compiling, the rest proves nothing."""
+    body = source.split("def create_buffer(")[1].split("def ")[0]
+    assert "_ffi.new" in body and "_call_desc" not in body
+
+
+def test_label_survives(device):
+    """wgpu-native never hands the label back, so it is kept Python-side."""
+    assert (
+        device.create_buffer(label="vbuf", size=256, usage="COPY_DST").label == "vbuf"
+    )
+    assert device.create_buffer(size=256, usage="COPY_DST").label == ""
+
+
+def test_multibyte_label(device):
+    """The StringView length is in bytes, not characters."""
+    label = "bü≈ffer"
+    assert device.create_buffer(label=label, size=64, usage="COPY_DST").label == label
+
+
+def test_defaults_match_the_interpreted_builder(device):
+    """An omitted field takes the spec default, not a zeroed one."""
+    # max_anisotropy defaults to 1; a zero would be invalid and wgpu-native
+    # would complain, so a clean create is the assertion.
+    assert device.create_sampler().__class__.__name__ == "GPUSampler"
+    assert device.create_query_set(type="occlusion", count=4).count == 4
+
+
+def test_enum_values_are_still_validated(device):
+    with pytest.raises(ValueError, match="Invalid value for FilterMode"):
+        device.create_sampler(mag_filter="bogus")
+
+
+def test_enum_accepts_string_and_member(device):
+    import wgpu
+
+    assert device.create_sampler(mag_filter="linear")
+    assert device.create_sampler(mag_filter=wgpu.FilterMode.linear)
+
+
+def test_flags_accept_string_and_int(device):
+    import wgpu
+
+    assert device.create_buffer(size=64, usage="COPY_SRC|COPY_DST")
+    assert device.create_buffer(
+        size=64, usage=wgpu.BufferUsage.COPY_SRC | wgpu.BufferUsage.COPY_DST
+    )
+
+
+def test_errors_are_reported_at_the_call(device):
+    """Unlike the per-draw setters, these check before returning.
+
+    finish() is a compiled method *and* the boundary the rest of the API
+    reports errors at, so deferring here would move every deferred error one
+    step further away.
+    """
+    import wgpu
+
+    with pytest.raises(wgpu.GPUError):
+        device.create_buffer(size=256, usage="MAP_READ|MAP_WRITE")
+    # ...and the device is still usable afterwards.
+    assert device.create_buffer(size=64, usage="COPY_DST")
+
+
+def test_finish_still_reports_a_deferred_error(device):
+    """A bad recorded command surfaces at finish(), as it always has."""
+    import wgpu
+
+    encoder = device.create_command_encoder()
+    src = device.create_buffer(size=64, usage="COPY_SRC")
+    dst = device.create_buffer(size=64, usage="COPY_SRC")  # not COPY_DST
+    encoder.copy_buffer_to_buffer(src, 0, dst, 0, 64)
+    with pytest.raises(wgpu.GPUError):
+        encoder.finish()

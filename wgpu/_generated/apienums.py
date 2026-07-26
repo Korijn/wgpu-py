@@ -9,8 +9,8 @@ and ``"rgba8unorm"`` are interchangeable."""
 
 from typing import Literal
 
-from wgpu._api.enumbase import EnumType as _EnumType
-from wgpu._api.maps import EnumMap as _EnumMap
+from wgpu._runtime.enumbase import EnumType as _EnumType
+from wgpu._runtime.maps import EnumMap as _EnumMap
 
 
 class Enum(metaclass=_EnumType):

@@ -44,6 +44,11 @@ class Api:
 
         self.errors = ErrorSink()
         self._error_callbacks = self._build_error_callbacks()
+        # Generated methods that build their descriptor inline call C directly,
+        # so they check for errors themselves rather than via invoke().
+        from wgpu._api import base
+
+        base.publish_error_tracker(self.errors)
 
     # -- error plumbing ----------------------------------------------------
 

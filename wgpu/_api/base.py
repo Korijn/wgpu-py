@@ -84,10 +84,7 @@ class GPUObjectBase(Mixin):
         return self._uid
 
     def __repr__(self):
-        return (
-            f"<wgpu.{self.__class__.__name__} "
-            f"{self._label!r} at {hex(id(self))}>"
-        )
+        return f"<wgpu.{self.__class__.__name__} {self._label!r} at {hex(id(self))}>"
 
     # -- dispatch ----------------------------------------------------------
     #
@@ -145,15 +142,40 @@ class GPUObjectBase(Mixin):
             pass
 
 
-def new_object(cls, handle, parent):
+def new_object(cls, handle, parent, label=""):
     """Wrap a handle a direct C call returned.
 
     The new object inherits its parent's event pump and holds a reference to
-    it, so the ancestry that backs async work stays alive.
+    it, so the ancestry that backs async work stays alive. The label is kept
+    Python-side, as it always has been: wgpu-native does not hand it back.
     """
     if not handle:
         return None
-    return cls(handle, parent._pump, parent)
+    return cls(handle, parent._pump, parent, label)
+
+
+#: The one live error tracker, published by ``Api`` at construction so the
+#: generated bodies can reach it without going through the invoker. There is
+#: exactly one ``Api`` (it is ``lru_cache``d), so this is not a shortcut around
+#: state that could plausibly be plural.
+_errors = None
+
+
+def publish_error_tracker(tracker) -> None:
+    global _errors
+    _errors = tracker
+
+
+def raise_if_error() -> None:
+    """Surface any error wgpu-native reported since the last check.
+
+    Methods that build a descriptor call this, so they keep reporting errors at
+    exactly the boundary they always have. The genuinely hot methods -- the
+    per-draw setters -- deliberately do not; their errors surface here instead,
+    at the next ``finish()`` or ``submit()``.
+    """
+    if _errors is not None and _errors:
+        _errors.raise_if_error()
 
 
 def unimplemented(c_func: str):

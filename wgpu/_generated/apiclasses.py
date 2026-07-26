@@ -23,12 +23,20 @@ from wgpu._generated import apistructs as structs
 from wgpu._native import ffi as _ffi, lib as _lib
 
 _NULL = _ffi.NULL
+from wgpu._api.base import raise_if_error as _raise_if_error
 _WHOLE64 = 18446744073709551615
+_E_address_mode = enums.TO_INT['address_mode']
+_E_compare_function = enums.TO_INT['compare_function']
 _E_error_filter = enums.TO_INT['error_filter']
+_E_filter_mode = enums.TO_INT['filter_mode']
 _E_index_format = enums.TO_INT['index_format']
+_E_mipmap_filter_mode = enums.TO_INT['mipmap_filter_mode']
+_E_query_type = enums.TO_INT['query_type']
+_F_buffer_usage = flags.TO_INT['buffer_usage']
 _c_wgpuBufferDestroy = _lib.wgpuBufferDestroy
 _c_wgpuCommandEncoderClearBuffer = _lib.wgpuCommandEncoderClearBuffer
 _c_wgpuCommandEncoderCopyBufferToBuffer = _lib.wgpuCommandEncoderCopyBufferToBuffer
+_c_wgpuCommandEncoderFinish = _lib.wgpuCommandEncoderFinish
 _c_wgpuCommandEncoderPopDebugGroup = _lib.wgpuCommandEncoderPopDebugGroup
 _c_wgpuCommandEncoderResolveQuerySet = _lib.wgpuCommandEncoderResolveQuerySet
 _c_wgpuComputePassEncoderDispatchWorkgroups = _lib.wgpuComputePassEncoderDispatchWorkgroups
@@ -38,6 +46,10 @@ _c_wgpuComputePassEncoderPopDebugGroup = _lib.wgpuComputePassEncoderPopDebugGrou
 _c_wgpuComputePassEncoderSetBindGroup = _lib.wgpuComputePassEncoderSetBindGroup
 _c_wgpuComputePassEncoderSetPipeline = _lib.wgpuComputePassEncoderSetPipeline
 _c_wgpuComputePipelineGetBindGroupLayout = _lib.wgpuComputePipelineGetBindGroupLayout
+_c_wgpuDeviceCreateBuffer = _lib.wgpuDeviceCreateBuffer
+_c_wgpuDeviceCreateCommandEncoder = _lib.wgpuDeviceCreateCommandEncoder
+_c_wgpuDeviceCreateQuerySet = _lib.wgpuDeviceCreateQuerySet
+_c_wgpuDeviceCreateSampler = _lib.wgpuDeviceCreateSampler
 _c_wgpuDeviceDestroy = _lib.wgpuDeviceDestroy
 _c_wgpuDevicePushErrorScope = _lib.wgpuDevicePushErrorScope
 _c_wgpuQuerySetDestroy = _lib.wgpuQuerySetDestroy
@@ -45,6 +57,7 @@ _c_wgpuRenderBundleEncoderDraw = _lib.wgpuRenderBundleEncoderDraw
 _c_wgpuRenderBundleEncoderDrawIndexed = _lib.wgpuRenderBundleEncoderDrawIndexed
 _c_wgpuRenderBundleEncoderDrawIndexedIndirect = _lib.wgpuRenderBundleEncoderDrawIndexedIndirect
 _c_wgpuRenderBundleEncoderDrawIndirect = _lib.wgpuRenderBundleEncoderDrawIndirect
+_c_wgpuRenderBundleEncoderFinish = _lib.wgpuRenderBundleEncoderFinish
 _c_wgpuRenderBundleEncoderPopDebugGroup = _lib.wgpuRenderBundleEncoderPopDebugGroup
 _c_wgpuRenderBundleEncoderSetBindGroup = _lib.wgpuRenderBundleEncoderSetBindGroup
 _c_wgpuRenderBundleEncoderSetIndexBuffer = _lib.wgpuRenderBundleEncoderSetIndexBuffer
@@ -249,7 +262,14 @@ class GPUCommandEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUObjectBase):
 
     def finish(self, *, label: str = "") -> GPUCommandBuffer:
         """GPUCommandEncoder.finish -- see the WebGPU specification."""
-        return self._call_desc('finish', {'label': label})
+        _d = _ffi.new("WGPUCommandBufferDescriptor *")
+        if label:
+            _s_label = _ffi.new("char[]", label.encode())
+            _d.label.data = _s_label
+            _d.label.length = len(_s_label) - 1
+        _r = _new_object(GPUCommandBuffer, _c_wgpuCommandEncoderFinish(self._handle, _d), self, label)
+        _raise_if_error()
+        return _r
 
     def pop_debug_group(self) -> None:
         """GPUCommandEncoder.popDebugGroup -- see the WebGPU specification."""
@@ -314,7 +334,20 @@ class GPUDevice(GPUObjectBase):
 
     def create_buffer(self, *, label: str = "", size: int, usage: flags.BufferUsageFlags, mapped_at_creation: bool = False) -> GPUBuffer:
         """GPUDevice.createBuffer -- see the WebGPU specification."""
-        return self._call_desc('create_buffer', {'label': label, 'size': size, 'usage': usage, 'mapped_at_creation': mapped_at_creation})
+        _d = _ffi.new("WGPUBufferDescriptor *")
+        if label:
+            _s_label = _ffi.new("char[]", label.encode())
+            _d.label.data = _s_label
+            _d.label.length = len(_s_label) - 1
+        if usage is not None:
+            _d.usage = _F_buffer_usage[usage]
+        if size is not None:
+            _d.size = size
+        if mapped_at_creation is not None:
+            _d.mappedAtCreation = mapped_at_creation
+        _r = _new_object(GPUBuffer, _c_wgpuDeviceCreateBuffer(self._handle, _d), self, label)
+        _raise_if_error()
+        return _r
 
     def create_texture(self, *, label: str = "", size: tuple[int, int, int] | structs.Extent3DStruct, mip_level_count: int = 1, sample_count: int = 1, dimension: enums.TextureDimensionEnum = "2d", format: enums.TextureFormatEnum, usage: flags.TextureUsageFlags, view_formats: Sequence[enums.TextureFormatEnum] = (), texture_binding_view_dimension: enums.TextureViewDimensionEnum | None = None) -> GPUTexture:
         """GPUDevice.createTexture -- see the WebGPU specification."""
@@ -322,7 +355,38 @@ class GPUDevice(GPUObjectBase):
 
     def create_sampler(self, *, label: str = "", address_mode_u: enums.AddressModeEnum = "clamp-to-edge", address_mode_v: enums.AddressModeEnum = "clamp-to-edge", address_mode_w: enums.AddressModeEnum = "clamp-to-edge", mag_filter: enums.FilterModeEnum = "nearest", min_filter: enums.FilterModeEnum = "nearest", mipmap_filter: enums.MipmapFilterModeEnum = "nearest", lod_min_clamp: float = 0, lod_max_clamp: float = 32, compare: enums.CompareFunctionEnum | None = None, max_anisotropy: int = 1) -> GPUSampler:
         """GPUDevice.createSampler -- see the WebGPU specification."""
-        return self._call_desc('create_sampler', {'label': label, 'address_mode_u': address_mode_u, 'address_mode_v': address_mode_v, 'address_mode_w': address_mode_w, 'mag_filter': mag_filter, 'min_filter': min_filter, 'mipmap_filter': mipmap_filter, 'lod_min_clamp': lod_min_clamp, 'lod_max_clamp': lod_max_clamp, 'compare': compare, 'max_anisotropy': max_anisotropy})
+        _d = _ffi.new("WGPUSamplerDescriptor *")
+        if label:
+            _s_label = _ffi.new("char[]", label.encode())
+            _d.label.data = _s_label
+            _d.label.length = len(_s_label) - 1
+        if address_mode_u is not None:
+            _d.addressModeU = _E_address_mode[address_mode_u]
+        if address_mode_v is not None:
+            _d.addressModeV = _E_address_mode[address_mode_v]
+        if address_mode_w is not None:
+            _d.addressModeW = _E_address_mode[address_mode_w]
+        if mag_filter is not None:
+            _d.magFilter = _E_filter_mode[mag_filter]
+        if min_filter is not None:
+            _d.minFilter = _E_filter_mode[min_filter]
+        if mipmap_filter is not None:
+            _d.mipmapFilter = _E_mipmap_filter_mode[mipmap_filter]
+        if lod_min_clamp is not None:
+            _d.lodMinClamp = lod_min_clamp
+        if lod_max_clamp is not None:
+            _d.lodMaxClamp = lod_max_clamp
+        else:
+            _d.lodMaxClamp = 32
+        if compare is not None:
+            _d.compare = _E_compare_function[compare]
+        if max_anisotropy is not None:
+            _d.maxAnisotropy = max_anisotropy
+        else:
+            _d.maxAnisotropy = 1
+        _r = _new_object(GPUSampler, _c_wgpuDeviceCreateSampler(self._handle, _d), self, label)
+        _raise_if_error()
+        return _r
 
     def create_bind_group_layout(self, *, label: str = "", entries: Sequence[structs.BindGroupLayoutEntryStruct]) -> GPUBindGroupLayout:
         """GPUDevice.createBindGroupLayout -- see the WebGPU specification."""
@@ -358,7 +422,14 @@ class GPUDevice(GPUObjectBase):
 
     def create_command_encoder(self, *, label: str = "") -> GPUCommandEncoder:
         """GPUDevice.createCommandEncoder -- see the WebGPU specification."""
-        return self._call_desc('create_command_encoder', {'label': label})
+        _d = _ffi.new("WGPUCommandEncoderDescriptor *")
+        if label:
+            _s_label = _ffi.new("char[]", label.encode())
+            _d.label.data = _s_label
+            _d.label.length = len(_s_label) - 1
+        _r = _new_object(GPUCommandEncoder, _c_wgpuDeviceCreateCommandEncoder(self._handle, _d), self, label)
+        _raise_if_error()
+        return _r
 
     def create_render_bundle_encoder(self, *, label: str = "", color_formats: Sequence[enums.TextureFormatEnum], depth_stencil_format: enums.TextureFormatEnum | None = None, sample_count: int = 1, depth_read_only: bool = False, stencil_read_only: bool = False) -> GPURenderBundleEncoder:
         """GPUDevice.createRenderBundleEncoder -- see the WebGPU specification."""
@@ -366,7 +437,18 @@ class GPUDevice(GPUObjectBase):
 
     def create_query_set(self, *, label: str = "", type: enums.QueryTypeEnum, count: int) -> GPUQuerySet:
         """GPUDevice.createQuerySet -- see the WebGPU specification."""
-        return self._call_desc('create_query_set', {'label': label, 'type': type, 'count': count})
+        _d = _ffi.new("WGPUQuerySetDescriptor *")
+        if label:
+            _s_label = _ffi.new("char[]", label.encode())
+            _d.label.data = _s_label
+            _d.label.length = len(_s_label) - 1
+        if type is not None:
+            _d.type = _E_query_type[type]
+        if count is not None:
+            _d.count = count
+        _r = _new_object(GPUQuerySet, _c_wgpuDeviceCreateQuerySet(self._handle, _d), self, label)
+        _raise_if_error()
+        return _r
 
     def push_error_scope(self, filter: enums.ErrorFilterEnum) -> None:
         """GPUDevice.pushErrorScope -- see the WebGPU specification."""
@@ -501,7 +583,14 @@ class GPURenderBundleEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBinding
 
     def finish(self, *, label: str = "") -> GPURenderBundle:
         """GPURenderBundleEncoder.finish -- see the WebGPU specification."""
-        return self._call_desc('finish', {'label': label})
+        _d = _ffi.new("WGPURenderBundleDescriptor *")
+        if label:
+            _s_label = _ffi.new("char[]", label.encode())
+            _d.label.data = _s_label
+            _d.label.length = len(_s_label) - 1
+        _r = _new_object(GPURenderBundle, _c_wgpuRenderBundleEncoderFinish(self._handle, _d), self, label)
+        _raise_if_error()
+        return _r
 
     def pop_debug_group(self) -> None:
         """GPURenderBundleEncoder.popDebugGroup -- see the WebGPU specification."""

@@ -68,7 +68,9 @@ def _native_features(lib) -> list[tuple[str, int]]:
         return []
     out = []
     seen = set()
-    for c_name in sorted(set(re.findall(r"WGPUNativeFeature_(\w+)", header.read_text()))):
+    for c_name in sorted(
+        set(re.findall(r"WGPUNativeFeature_(\w+)", header.read_text()))
+    ):
         if c_name == "Force32":
             continue  # a sizing sentinel, not a feature
         name = bridge.camel_to_snake(c_name).replace("_", "-")
@@ -101,8 +103,8 @@ def generate_api_enums(b: bridge.Bridge, lib) -> str:
         "",
         "from typing import Literal",
         "",
-        "from wgpu._api.enumbase import EnumType as _EnumType",
-        "from wgpu._api.maps import EnumMap as _EnumMap",
+        "from wgpu._runtime.enumbase import EnumType as _EnumType",
+        "from wgpu._runtime.maps import EnumMap as _EnumMap",
         "",
         "",
         "class Enum(metaclass=_EnumType):",
@@ -221,8 +223,8 @@ def generate_api_flags(b: bridge.Bridge) -> str:
         '"""WebGPU flags: integer bitmasks. ``BufferUsage.MAP_READ | BufferUsage.COPY_DST``',
         'can also be written as ``"MAP_READ|COPY_DST"``."""',
         "",
-        "from wgpu._api.enumbase import EnumType as _EnumType",
-        "from wgpu._api.maps import FlagMap as _FlagMap",
+        "from wgpu._runtime.enumbase import EnumType as _EnumType",
+        "from wgpu._runtime.maps import FlagMap as _FlagMap",
         "",
         "",
         "class Flags(metaclass=_EnumType):",
@@ -252,7 +254,9 @@ def generate_api_flags(b: bridge.Bridge) -> str:
     for idl_name in names:
         lines.append(f"{idl_name}Flags = int | str")
     lines.append("")
-    lines.append("#: C-spec bitflag name -> mapping that accepts ints and 'A|B' strings.")
+    lines.append(
+        "#: C-spec bitflag name -> mapping that accepts ints and 'A|B' strings."
+    )
     lines.append("TO_INT: dict[str, _FlagMap] = {}")
     lines.append("")
     for idl_name in names:
@@ -512,8 +516,9 @@ def generate_api_classes(b: bridge.Bridge, spec: dict, native=None) -> str:
         proxy = MIXIN_REPRESENTATIVE.get(cls_name, cls_name)
         spec_object = b.classes.get(proxy)
         body.extend(
-            _emit_class(b, cls_name, interface, spec_object, objects, proxy,
-                        binds, native)
+            _emit_class(
+                b, cls_name, interface, spec_object, objects, proxy, binds, native
+            )
         )
 
     lines = [
@@ -557,8 +562,20 @@ def _emit_bindings(binds: set) -> list[str]:
         "",
     ]
     kinds = {kind for kind, _ in binds}
-    if "null" in kinds:
+    if "null" in kinds or "handle" in kinds:
         lines.append("_NULL = _ffi.NULL")
+    if "errors" in kinds:
+        lines.append("from wgpu._api.base import raise_if_error as _raise_if_error")
+    if "handle" in kinds:
+        lines.append("")
+        lines.append("def _handle(obj):")
+        lines.append(
+            '    """A public object as its C handle; "auto" and None are NULL."""'
+        )
+        lines.append(
+            '    return _NULL if obj is None or obj == "auto" else obj._handle'
+        )
+        lines.append("")
     for width in sorted(w for k, w in binds if k == "whole"):
         # WGPU_WHOLE_SIZE / WGPU_WHOLE_MAP_SIZE, per parameter width.
         lines.append(f"_WHOLE{width} = {(1 << width) - 1}")
@@ -599,8 +616,9 @@ def _in_dependency_order(b, names):
     return ordered
 
 
-def _emit_class(b, cls_name, interface, spec_object, objects, proxy,
-                binds=None, native=None) -> list[str]:
+def _emit_class(
+    b, cls_name, interface, spec_object, objects, proxy, binds=None, native=None
+) -> list[str]:
     bases = [
         base
         for base in interface.bases
@@ -628,15 +646,19 @@ def _emit_class(b, cls_name, interface, spec_object, objects, proxy,
         if (cls_name, fn_name) in HAND_WRITTEN:
             body += _emit_override_hook(cls_name, fn_name, line)
             continue
-        spec_method = b.methods.get((proxy, fn_name)) or bridge.camel_to_snake(
-            fn_name
-        )
+        spec_method = b.methods.get((proxy, fn_name)) or bridge.camel_to_snake(fn_name)
         if spec_method not in spec_methods:
             continue  # web-only, or lives on a hand-written class
         body += _emit_method(
-            b, cls_name, fn_name, line, spec_methods[spec_method], interface,
+            b,
+            cls_name,
+            fn_name,
+            line,
+            spec_methods[spec_method],
+            interface,
             spec_object=(None if cls_name in MIXIN_REPRESENTATIVE else spec_object),
-            binds=binds, native=native,
+            binds=binds,
+            native=native,
         )
     # Methods a mixin contributes are declared once but implemented by a
     # *different* C function per concrete object (draw is
@@ -659,7 +681,9 @@ def _emit_class(b, cls_name, interface, spec_object, objects, proxy,
     return lines + body
 
 
-def _emit_c_binding(b, cls_name, fn_name, spec_methods, spec_object, binds) -> list[str]:
+def _emit_c_binding(
+    b, cls_name, fn_name, spec_methods, spec_object, binds
+) -> list[str]:
     """Expose a hand-written method's C function as a class attribute.
 
     ``set_bind_group`` cannot be generated -- the web API slices a dynamic
@@ -692,8 +716,9 @@ def _emit_mixin_overrides(
             if (base, fn_name) in HAND_WRITTEN:
                 # The implementation is hand-written, but it still needs *this*
                 # class's C function to take a fast path of its own.
-                out += _emit_c_binding(b, cls_name, fn_name, spec_methods,
-                                       spec_object, binds)
+                out += _emit_c_binding(
+                    b, cls_name, fn_name, spec_methods, spec_object, binds
+                )
                 seen.add(fn_name)
                 continue
             seen.add(fn_name)
@@ -701,8 +726,15 @@ def _emit_mixin_overrides(
             if spec_method not in spec_methods:
                 continue
             emitted = _emit_method(
-                b, cls_name, fn_name, line, spec_methods[spec_method],
-                interface, spec_object=spec_object, binds=binds, native=native,
+                b,
+                cls_name,
+                fn_name,
+                line,
+                spec_methods[spec_method],
+                interface,
+                spec_object=spec_object,
+                binds=binds,
+                native=native,
             )
             # Only worth overriding if it actually compiled to a direct call;
             # otherwise the inherited implementation is identical.
@@ -880,6 +912,11 @@ def _direct_body(b, spec_object, spec_method, params, binds, native) -> str | No
             return None
 
     call = f"_c_{c_func}(self._handle{''.join(', ' + e for e in exprs)})"
+    return _return_expr(b, call, ret_kind, ret_ref, binds)
+
+
+def _return_expr(b, call: str, ret_kind, ret_ref, binds, label: str = "") -> str:
+    """Wrap a raw C call so it yields the public form of its return value."""
     if ret_kind is None or (ret_kind == "prim" and ret_ref != "bool"):
         return call
     if ret_kind == "prim":  # bool
@@ -892,7 +929,135 @@ def _direct_body(b, spec_object, spec_method, params, binds, native) -> str | No
     # object return: it inherits this object's event pump and keeps it alive
     cls = next(k for k, v in b.classes.items() if v == ret_ref)
     binds.add(("new_object", None))
-    return f"_new_object({cls}, {call}, self)"
+    suffix = f", {label}" if label else ""
+    return f"_new_object({cls}, {call}, self{suffix})"
+
+
+#: Member kinds a compiled descriptor body can fill with one statement each.
+#: Arrays, nested structs, callbacks and chained extensions need the
+#: interpreted builder, which those methods keep using.
+COMPILABLE_MEMBER_KINDS = frozenset({"prim", "enum", "bitflag", "string", "object"})
+
+
+def _compiled_descriptor_body(b, spec_object, spec_method, idl_struct, binds, native):
+    """Build this method's descriptor inline, or return None.
+
+    The interpreted builder walks a struct descriptor on every call: look up
+    the member, dispatch on its kind, normalise the key, apply the default.
+    None of that depends on the *values*, so for a struct whose members are all
+    settable in one statement, the generator does that walk once, here, and
+    emits straight-line code.
+
+    Returns ``(lines, call)``, where the lines build ``_d`` and the call is the
+    C call to make with it. The keep-alive problem solves itself: the encoded
+    strings are locals, so they outlive the call that reads them.
+    """
+    from wgpu._generated.structs import STRUCTS
+
+    from . import generate, naming
+
+    if spec_object is None or native is None:
+        return None
+    args = spec_method.get("args", [])
+    if len(args) != 1 or not args[0]["type"].startswith("struct."):
+        return None
+    desc = STRUCTS.get(args[0]["type"].split(".", 1)[1])
+    if desc is None or desc.adapters or desc.s_type:
+        return None  # a shape adapter or a chained struct: keep interpreting
+    if any(
+        m.array
+        or m.kind not in COMPILABLE_MEMBER_KINDS
+        or (m.kind == "prim" and m.pointer)
+        for m in desc.members
+    ):
+        return None
+
+    ret = spec_method.get("returns")
+    ret_kind, ret_ref = (None, None)
+    if ret:
+        ret_kind, ret_ref, ret_array = generate._parse_member_type(ret["type"])
+        if ret_array or ret_kind not in DIRECT_RET_KINDS:
+            return None
+        if ret_kind == "object" and ret_ref not in b.classes.values():
+            return None
+
+    # The public keyword names, as the flattened signature spells them.
+    idl_name = idl_struct[3:]
+    if idl_name.endswith("Dict"):
+        idl_name = idl_name[:-4]
+    params = {_ident(bridge.camel_to_snake(f)) for f in b.idl.structs.get(idl_name, {})}
+
+    lines = [f'_d = _ffi.new("{desc.c_name} *")']
+    for mem in desc.members:
+        given = mem.py in params
+        if not given:
+            # No public keyword sets this member; only a constant default can.
+            literal = _default_literal(mem.default)
+            if literal is not None:
+                lines.append(f"_d.{mem.c} = {literal}")
+            continue
+        name = mem.py
+        # An explicit None means "unspecified", exactly as omitting the field
+        # does for the interpreted builder -- so it falls back the same way.
+        fallback = _default_literal(mem.default)
+        if mem.kind == "string":
+            # Falsy label -> leave the zeroed StringView, which is the empty
+            # string. cffi's char[] is NUL-terminated, hence the -1.
+            lines += [
+                f"if {name}:",
+                f'    _s_{name} = _ffi.new("char[]", {name}.encode())',
+                f"    _d.{mem.c}.data = _s_{name}",
+                f"    _d.{mem.c}.length = len(_s_{name}) - 1",
+            ]
+            continue
+        if mem.kind == "enum":
+            binds.add(("enum", mem.ref))
+            value = f"_E_{mem.ref}[{name}]"
+        elif mem.kind == "bitflag":
+            binds.add(("bitflag", mem.ref))
+            value = f"_F_{mem.ref}[{name}]"
+        elif mem.kind == "object":
+            binds.add(("handle", None))
+            value = f"_handle({name})"
+        else:  # prim
+            value = name
+        lines.append(f"if {name} is not None:")
+        lines.append(f"    _d.{mem.c} = {value}")
+        if fallback is not None:
+            lines.append("else:")
+            lines.append(f"    _d.{mem.c} = {fallback}")
+
+    c_func = naming.c_method_func(spec_object, spec_method["name"])
+    binds.add(("func", c_func))
+    binds.add(("errors", None))
+    # The label never comes back from C, so a created object carries the one it
+    # was asked for -- exactly what the interpreted path records.
+    label = (
+        "label"
+        if any(m.py == "label" for m in desc.members) and "label" in params
+        else ""
+    )
+    call = _return_expr(
+        b, f"_c_{c_func}(self._handle, _d)", ret_kind, ret_ref, binds, label
+    )
+    # Unlike the per-draw setters, these still report errors where they always
+    # have: finish() is a checkpoint the rest of the API relies on.
+    lines.append(f"_r = {call}")
+    lines.append("_raise_if_error()")
+    return lines, "_r"
+
+
+def _default_literal(default):
+    """A struct default as a Python literal, or None if there is nothing to emit.
+
+    Zero is nothing to emit: ``ffi.new`` hands back zeroed memory, so assigning
+    a falsy default would only restate what is already there.
+    """
+    if isinstance(default, bool):
+        return "1" if default else None
+    if isinstance(default, (int, float)):
+        return repr(default) if default else None
+    return None
 
 
 def _unimplemented_body(spec_object, spec_method) -> str | None:
@@ -910,14 +1075,19 @@ def _unimplemented_body(spec_object, spec_method) -> str | None:
     c_func = naming.c_method_func(spec_object, spec_method["name"])
     if c_func not in paths.unimplemented_functions():
         return None
-    return (
-        f"_unimplemented({c_func!r})"
-    )
+    return f"_unimplemented({c_func!r})"
 
 
 def _emit_method(
-    b, cls_name, fn_name, line, spec_method, interface, spec_object=None,
-    binds=None, native=None,
+    b,
+    cls_name,
+    fn_name,
+    line,
+    spec_method,
+    interface,
+    spec_object=None,
+    binds=None,
+    native=None,
 ) -> list[str]:
     py = bridge.camel_to_snake(fn_name)
     params = _params(line)
@@ -943,11 +1113,19 @@ def _emit_method(
     )
     if flattened:
         sig, mapping = _flatten_descriptor(b, params[0].typename)
-        call = _unimplemented_body(spec_object, spec_method) or (
-            f"self._call_desc({spec_method['name']!r}, {mapping})"
-        )
-        decl = f"def {_ident(py)}(self, *, {sig}) -> {ann}:" if sig else (
-            f"def {_ident(py)}(self) -> {ann}:"
+        call = _unimplemented_body(spec_object, spec_method)
+        if call is None and not is_async and binds is not None:
+            compiled = _compiled_descriptor_body(
+                b, spec_object, spec_method, params[0].typename, binds, native
+            )
+            if compiled is not None:
+                prologue, call = compiled
+        if call is None:
+            call = f"self._call_desc({spec_method['name']!r}, {mapping})"
+        decl = (
+            f"def {_ident(py)}(self, *, {sig}) -> {ann}:"
+            if sig
+            else (f"def {_ident(py)}(self) -> {ann}:")
         )
     else:
         call = _unimplemented_body(spec_object, spec_method)
@@ -967,7 +1145,9 @@ def _emit_method(
             name = _ident(bridge.camel_to_snake(p.name))
             names.append(name)
             default = _default_repr(p.default, p.typename, b.idl)
-            pann = _annotate(b.idl, p.typename, optional=not p.required and default == "None")
+            pann = _annotate(
+                b.idl, p.typename, optional=not p.required and default == "None"
+            )
             if p.required:
                 sig_parts.append(f"{name}: {pann}")
             else:
@@ -981,17 +1161,19 @@ def _emit_method(
         decl = f"def {_ident(py)}(self{', ' + sig if sig else ''}) -> {ann}:"
 
     doc = f'        """{cls_name}.{fn_name} -- see the WebGPU specification."""'
+    if isinstance(prologue, str):
+        prologue = [prologue]
     if not is_async:
         body = [f"    {decl}", doc]
-        if prologue:
-            body.append(f"        {prologue}")
+        body += [f"        {ln}" for ln in prologue or ()]
         return [*body, f"        return {call}", ""]
 
     # Promise-returning: wgpu-py exposes both a blocking and an awaitable form.
     # Unless the IDL already has a separate synchronous sibling, in which case
     # only the awaitable form is ours to add.
     has_sync_sibling = any(
-        bridge.camel_to_snake(other) == py for other in interface.functions
+        bridge.camel_to_snake(other) == py
+        for other in interface.functions
         if other != fn_name
     )
     out = []
@@ -1016,7 +1198,9 @@ def _flatten_descriptor(b, idl_struct_name: str) -> tuple[str, str]:
     for fname, attr in fields.items():
         py = _ident(bridge.camel_to_snake(fname))
         default = _default_repr(attr.default, attr.typename, b.idl)
-        ann = _annotate(b.idl, attr.typename, optional=not attr.required and default == "None")
+        ann = _annotate(
+            b.idl, attr.typename, optional=not attr.required and default == "None"
+        )
         if attr.required:
             ordered.append(f"{py}: {ann}")
         else:
