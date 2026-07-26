@@ -58,6 +58,16 @@ _ERROR_TYPES = {
 }
 
 
+def _clean(message: str) -> str:
+    """Tidy a wgpu-native message without changing what it says.
+
+    Only trailing whitespace goes -- wgpu-native pads its blank separator lines
+    -- because the leading newline and the indentation of the source excerpt
+    are part of how the message reads.
+    """
+    return "\n".join(line.rstrip() for line in message.rstrip().splitlines())
+
+
 class ErrorSink:
     """Collects errors reported from C callbacks for later re-raising."""
 
@@ -68,7 +78,7 @@ class ErrorSink:
         """Called from the C callback; must never raise."""
         try:
             cls = _ERROR_TYPES.get(int(error_type), GPUError)
-            self._pending.append(cls(message.strip() or cls.__name__))
+            self._pending.append(cls(_clean(message) or cls.__name__))
         except BaseException:  # pragma: no cover - defensive, cannot propagate
             logger.exception("failed to record a wgpu error")
 
