@@ -8,7 +8,7 @@ that could be derived is being written by hand instead.
 
 from __future__ import annotations
 
-from wgpu._api.base import GPUObjectBase
+from wgpu._api.base import GPUHandle
 from wgpu._coreutils import logger
 from wgpu._native import ffi as _ffi
 
@@ -88,12 +88,32 @@ def texture_texture_binding_view_dimension(self):
 
 @property
 def device_queue(self):
-    """The device's default queue. Created lazily and then cached."""
+    """The device's default queue -- one object for the device's lifetime."""
     queue = self._queue
     if queue is None:
         queue = self._queue = self._get("get_queue")
         queue._label = "default"
     return queue
+
+
+def eager_queue(init):
+    """Give a device its queue as it is made, rather than on first use.
+
+    The spec treats ``device.queue`` as something a device simply *has*, and
+    wgpu-native makes one alongside every device whether Python asks or not. So
+    creating it lazily would let a device be made and dropped with a queue that
+    exists natively and was never counted on the Python side -- the two object
+    counts would disagree for no reason a reader could act on. A device is
+    created about once per process, so doing it up front costs nothing.
+    """
+
+    def init_with_queue(self, *args, **kwargs):
+        init(self, *args, **kwargs)
+        device_queue.fget(self)
+
+    init_with_queue.__name__ = init.__name__
+    init_with_queue.__doc__ = init.__doc__
+    return init_with_queue
 
 
 @property
@@ -246,6 +266,25 @@ def buffer_map_sync(self, mode, offset=0, size=None):
 
 
 buffer_map = deprecated_sync_or_async("map")
+
+
+def destroy_consuming(self, c_destroy):
+    """Destroy an object whose handle wgpu-native frees on its way out.
+
+    Normally destroying and releasing are separate: the wgpu-core resource is
+    put into a destroyed state, the handle stays valid, and the release comes
+    later. For the handles named by ``bindgen.paths.destroy_consumes_handle``,
+    wgpu-native's destroy *is* the free, and the release that follows would
+    free it a second time -- which aborts the process rather than raising.
+
+    So the handle is kept (the getters still read it, and it is still a valid
+    pointer) but marked as no longer ours to release. Destroying twice is a
+    no-op, as the spec says it should be, rather than the same double free.
+    """
+    if self._handle_consumed or self._handle is None:
+        return None
+    self._handle_consumed = True
+    return c_destroy(self._handle)
 
 
 def buffer_unmap(self):
@@ -413,7 +452,7 @@ def retain_arguments(method):
         if retained is None:
             retained = self._retained = set()
         for value in (*args, *kwargs.values()):
-            if isinstance(value, GPUObjectBase):
+            if isinstance(value, GPUHandle):
                 retained.add(value)
         return method(self, *args, **kwargs)
 

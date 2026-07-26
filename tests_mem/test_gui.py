@@ -7,7 +7,7 @@ import weakref
 
 import wgpu
 import pytest
-from testutils import can_use_wgpu_lib, create_and_release, is_pypy
+from testutils import can_use_glfw, can_use_wgpu_lib, create_and_release, is_pypy
 import testutils  # noqa: F401 - sometimes used in debugging
 
 
@@ -80,10 +80,36 @@ def test_release_canvas_context(n):
     assert not canvases
 
 
-TEST_FUNCS = [test_release_canvas_context]
+@create_and_release
+def test_release_surface(n):
+    # A surface needs a real window to wrap, so an offscreen canvas never makes
+    # one -- see the note above. wgpu-core does not track surfaces either, so
+    # there is no native count to compare against.
+    yield {
+        "expected_counts_after_create": {"Surface": (n, 0)},
+    }
+    if not can_use_glfw:
+        pytest.skip("Need glfw for a real window to make a surface from")
+
+    from rendercanvas.glfw import RenderCanvas
+
+    canvases = []
+    for i in range(n):
+        canvas = RenderCanvas()
+        canvases.append(canvas)
+        yield canvas.get_context("wgpu")._surface
+
+
+TEST_FUNCS = [test_release_canvas_context, test_release_surface]
 
 
 if __name__ == "__main__":
     # testutils.TEST_ITERS = 40  # Uncomment for a mem-usage test run
 
-    test_release_canvas_context()
+    for func in TEST_FUNCS:
+        print(func.__name__ + " ...")
+        try:
+            func()
+        except pytest.skip.Exception:
+            print("  skipped")
+    print("done")

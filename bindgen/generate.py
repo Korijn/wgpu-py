@@ -530,18 +530,27 @@ def generate_classes(spec, bridge=None) -> str:
     import keyword as _kw
 
     covered = set(bridge.classes.values()) if bridge else set()
+    unimplemented = paths.unimplemented_functions()
     lines = [
         _BANNER,
         '"""``GPU*`` classes for wgpu-native objects with no Web IDL counterpart."""',
         "",
-        "from wgpu._api.base import GPUObjectBase",
+        "from wgpu._api.base import GPUHandle",
         "",
     ]
     for obj in spec["objects"]:
         if obj["name"] in covered:
             continue
+        if naming.c_object_lifecycle(obj["name"], "Release") in unimplemented:
+            # Nothing Python can own: every handle it holds has to be released
+            # eventually, and calling an unimplemented function aborts the
+            # process. External textures are the case today -- they can only be
+            # made from a browser image source, so wgpu-native never implemented
+            # their lifetime -- and a class nobody can hold an instance of is
+            # worse than no class, because it shows up in the object counts.
+            continue
         cls = "GPU" + naming.py_class_name(obj["name"])
-        lines.append(f"class {cls}(GPUObjectBase):")
+        lines.append(f"class {cls}(GPUHandle):")
         lines.append(f"    _spec_name = {obj['name']!r}")
         lines.append("")
         methods = obj.get("methods", [])

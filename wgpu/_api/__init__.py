@@ -45,6 +45,7 @@ from wgpu._runtime.errors import (
 
 # -- wgpu-py additions to the WebGPU API -------------------------------------
 
+GPUDevice.__init__ = _ov.eager_queue(GPUDevice.__init__)
 GPUDevice.create_buffer = _ov.track_mapped_at_creation(GPUDevice.create_buffer)
 GPUCommandEncoder.begin_render_pass = _ov.drop_inapplicable_aspect_ops(
     GPUCommandEncoder.begin_render_pass

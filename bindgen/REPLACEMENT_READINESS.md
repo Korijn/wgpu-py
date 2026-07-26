@@ -209,9 +209,10 @@ which would abort the process rather than raise.
 
 ## Porting the historical suite
 
-In progress. **214 of 233 tests pass**, with no errors and no crashes -- from a
-suite that would not even collect. `tests_mem` now collects and largely runs
-too, where before it could not be imported at all.
+In progress. **215 of 233 tests pass**, with no errors and no crashes -- from a
+suite that would not even collect. **`tests_mem` passes in full** (38 passed,
+4 skipped for a missing GUI toolkit or an unimplemented object), where before
+it could not be imported at all.
 
 It has earned its keep repeatedly, finding bugs nothing else did:
 
@@ -245,6 +246,29 @@ It has earned its keep repeatedly, finding bugs nothing else did:
 * **A render bundle encoder did not keep its arguments alive.** It reads them
   again at `finish()`, and wgpu-core panics on a released slot -- which aborts
   the process rather than raising. `bindgen/tests` reproduces the abort.
+* **Destroying a query set and then releasing it aborted the process.**
+  `wgpuQuerySetDestroy` drops the wgpu-core resource, and the handle's own
+  `Drop` drops it again on release; wgpu-core panics on the vacant slot.
+  wgpu-native's source says "FIXME: we shouldn't be using drop to implement
+  this!", so the pair is *found* rather than named -- a `Destroy` and a `Drop`
+  calling the same `*_drop` for the same object -- and the redundant release is
+  suppressed. If upstream fixes it, the set goes empty and the release resumes
+  with no edit here.
+* **A command buffer kept its encoder alive.** `finish()` invalidates the
+  encoder, so parenting its output to it pinned an object the caller has been
+  told is dead. The product is now parented past the encoder, to the device.
+* **A device's queue was created on first use.** wgpu-native makes one with
+  every device regardless, so a device dropped without anyone touching
+  `.queue` left the Python and native counts disagreeing for no reason a
+  reader could act on.
+* **The adapter was a `GPUObjectBase`.** The IDL says which interfaces include
+  that mixin and the adapter is not one of them -- it has no label, and asking
+  it for its device is a question with no answer. The handle machinery now
+  sits in a `GPUHandle` base, and `GPUObjectBase` is the spec's mixin on top,
+  so "every labelled object belongs to a device" is true rather than nearly.
+* **`GPUExternalTexture` was a class nobody could hold.** wgpu-native does not
+  implement its release, so an instance could never be freed. Object types
+  whose release is unimplemented are no longer emitted at all.
 * **wgpu-native's log went nowhere.** naga explains *why* a shader failed
   through the log while the error callback only says that it did, so the
   useful half of every shader error was being discarded.
@@ -276,9 +300,9 @@ recovered by walking the class tree, which only the diagnostic does.
 
 | file | failing | what they are |
 | --- | ---: | --- |
-| `test_wgpu_native_basics.py` | 8 | probe `_api` / `_ffi` / `_helpers` / `_internal` |
+| `test_wgpu_native_basics.py` | 9 | probe `_api` / `_ffi` / `_helpers` / `_internal`, plus API tracing |
 | `test_api.py` | 7 | classic construction, backend registration, `wgpu._classes` |
-| others (3 files) | 4 | `_mappings`, backend-qualified `repr`, API tracing |
+| others (2 files) | 2 | `_mappings`, backend-qualified `repr` |
 
 What is left is now almost entirely tests reaching for classic internals that
 no longer exist -- they need porting, not implementation changes. The one real
@@ -319,11 +343,9 @@ the check that keeps "fully generated" true rather than aspirational.
 
 ## What is left
 
-1. Port the ~19 remaining tests that reach for deleted internals.
+1. Port the ~18 remaining tests that reach for deleted internals.
 2. Push constants, and API tracing.
-3. `tests_mem` collects and runs, but aggressive release ordering still aborts
-   the process in some combinations -- a real lifetime bug, not a test artefact.
-4. Descriptors that still marshal at runtime (arrays and nested structs) could
+3. Descriptors that still marshal at runtime (arrays and nested structs) could
    use the same compiled bodies as the flat ones.
 
 wgpu-native's own extension structs (`WGPUShaderSourceGLSL` and the `*Extras`

@@ -379,6 +379,22 @@ def test_release_texture_view(n):
 
 
 @create_and_release
+def test_release_instance(n):
+    # The instance is the root object: wgpu-py makes one for you and hands out
+    # adapters from it, so there is rarely a reason to make one directly. It is
+    # still a handle Python owns and releases, and wgpu-core does not track it,
+    # so only the Python side has a count to compare.
+    from wgpu._runtime.api import get_api
+
+    yield {
+        "expected_counts_after_create": {"Instance": (n, 0)},
+    }
+    api = get_api()
+    for i in range(n):
+        yield api.create_instance()
+
+
+@create_and_release
 def test_release_pipeline_cache(n):
     # not implemented in wgpu-native yet
     # part of CreateRenderPipeline and CreateComputePipeline

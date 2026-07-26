@@ -26,7 +26,7 @@ class Mixin:
     __slots__ = ()
 
 
-class GPUObjectBase(Mixin):
+class GPUHandle(Mixin):
     """A handle to an object owned by wgpu-native.
 
     Instances are created by the runtime when a C call returns a handle, never
@@ -66,6 +66,10 @@ class GPUObjectBase(Mixin):
         # implement the getter, and the range has to be validated in Python
         # anyway, since passing a bad one to C aborts the process.
         "_map_status",
+        # Set when destroy() has already handed the handle back to wgpu-native
+        # for good, so releasing it would free it twice. See
+        # bindgen.paths.destroy_consumes_handle.
+        "_handle_consumed",
     )
 
     _spec_name = ""
@@ -95,14 +99,10 @@ class GPUObjectBase(Mixin):
         self._map_status = (0, 0, 0)
         self._mapped_views = []
         self._retained = None
+        self._handle_consumed = False
         self._live[0] += 1
 
     # -- identity ----------------------------------------------------------
-
-    @property
-    def label(self) -> str:
-        """A human-readable name for this object, for debugging."""
-        return self._label
 
     @property
     def uid(self) -> int:
@@ -143,7 +143,7 @@ class GPUObjectBase(Mixin):
 
     def _call_desc(self, spec_method: str, descriptor: dict):
         result = get_api().invoke(self, spec_method, (descriptor,))
-        if isinstance(result, GPUObjectBase):
+        if isinstance(result, GPUHandle):
             result._label = descriptor.get("label") or ""
         return result
 
@@ -180,13 +180,50 @@ class GPUObjectBase(Mixin):
         handle, self._handle = self._handle, None
         if handle is not None and self._spec_name:
             self._live[0] -= 1
-            get_api().release(self._spec_name, handle)
+            if not self._handle_consumed:
+                get_api().release(self._spec_name, handle)
 
     def __del__(self):
         try:
             self._release()
         except Exception:  # pragma: no cover - interpreter shutdown
             pass
+
+
+class GPUObjectBase(GPUHandle):
+    """The Web IDL's ``GPUObjectBase``: a handle the spec gives a label.
+
+    Not every handle is one. The IDL says which, with ``GPUFoo includes
+    GPUObjectBase``, and it leaves out the adapter -- along with the instance
+    and the surface, which it does not describe at all. Those are still handles
+    wgpu-native owns and Python releases, which is what :class:`GPUHandle`
+    covers; they simply are not labelled objects, and asking one for its device
+    is a question with no answer. Keeping the two apart is what lets code (the
+    memory tests, for one) say "every labelled object belongs to a device" and
+    have it be true.
+    """
+
+    __slots__ = ()
+
+    @property
+    def label(self) -> str:
+        """A human-readable name for this object, for debugging."""
+        return self._label
+
+
+#: Methods that consume the object they are called on. ``finish()`` ends a
+#: command encoder or a render bundle encoder, and the spec calls the encoder
+#: invalid from then on -- so what it hands back must be parented past it, to
+#: the device. An encoder kept alive by its own output would outlive the point
+#: it stopped being usable, which the memory tests read (rightly) as a leak.
+CONSUMING_METHODS = frozenset({"finish"})
+
+
+def owner_for(caller, spec_method: str):
+    """The object a newly created one should hold onto, given who made it."""
+    if spec_method in CONSUMING_METHODS:
+        return caller._parent or caller
+    return caller
 
 
 def new_object(cls, handle, parent, label=""):

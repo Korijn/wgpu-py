@@ -12,7 +12,8 @@ from collections.abc import Sequence
 
 from wgpu._api import overrides as _ov
 from wgpu._api.base import unimplemented as _unimplemented
-from wgpu._api.base import GPUObjectBase, Mixin, new_object as _new_object
+from wgpu._api.base import GPUHandle, GPUObjectBase, Mixin
+from wgpu._api.base import new_object as _new_object
 from wgpu._api.base import slice_data as _slice_data
 from wgpu._api.types import ArrayLike, CanvasLike
 from wgpu._generated import apienums as enums
@@ -115,7 +116,7 @@ __all__ = [
 
 
 
-class GPUAdapter(GPUObjectBase):
+class GPUAdapter(GPUHandle):
     """GPUAdapter -- see the WebGPU specification."""
     _spec_name = 'adapter'
 
@@ -272,7 +273,7 @@ class GPUCommandEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUObjectBase):
             _d.label.length = len(_s_label) - 1
         else:
             _d.label.length = _STRLEN
-        _r = _new_object(GPUCommandBuffer, _c_wgpuCommandEncoderFinish(self._handle, _d), self, label)
+        _r = _new_object(GPUCommandBuffer, _c_wgpuCommandEncoderFinish(self._handle, _d), self._parent, label)
         _raise_if_error()
         return _r
 
@@ -505,7 +506,7 @@ class GPUQuerySet(GPUObjectBase):
 
     def destroy(self) -> None:
         """GPUQuerySet.destroy -- see the WebGPU specification."""
-        return _c_wgpuQuerySetDestroy(self._handle)
+        return _ov.destroy_consuming(self, _c_wgpuQuerySetDestroy)
 
     @property
     def type(self) -> enums.QueryTypeEnum:
@@ -606,7 +607,7 @@ class GPURenderBundleEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBinding
             _d.label.length = len(_s_label) - 1
         else:
             _d.label.length = _STRLEN
-        _r = _new_object(GPURenderBundle, _c_wgpuRenderBundleEncoderFinish(self._handle, _d), self, label)
+        _r = _new_object(GPURenderBundle, _c_wgpuRenderBundleEncoderFinish(self._handle, _d), self._parent, label)
         _raise_if_error()
         return _r
 

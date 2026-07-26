@@ -587,7 +587,8 @@ def generate_api_classes(b: bridge.Bridge, spec: dict, native=None) -> str:
         "",
         "from wgpu._api import overrides as _ov",
         "from wgpu._api.base import unimplemented as _unimplemented",
-        "from wgpu._api.base import GPUObjectBase, Mixin, new_object as _new_object",
+        "from wgpu._api.base import GPUHandle, GPUObjectBase, Mixin",
+        "from wgpu._api.base import new_object as _new_object",
         "from wgpu._api.base import slice_data as _slice_data",
         "from wgpu._api.types import ArrayLike, CanvasLike",
         "from wgpu._generated import apienums as enums",
@@ -686,7 +687,10 @@ def _emit_class(
     # last -- the order wgpu-py has always used.
     bases.sort(key=lambda n: n == "GPUObjectBase")
     if not bases:
-        bases = ["Mixin"] if cls_name in MIXIN_REPRESENTATIVE else ["GPUObjectBase"]
+        # No mixins, and the IDL did not say ``includes GPUObjectBase`` -- so
+        # this is a handle the spec does not treat as a labelled object. The
+        # adapter is the one such class in the IDL; see ``GPUHandle``.
+        bases = ["Mixin"] if cls_name in MIXIN_REPRESENTATIVE else ["GPUHandle"]
     lines = ["", "", f"class {cls_name}({', '.join(bases)}):"]
     lines.append(f'    """{cls_name} -- see the WebGPU specification."""')
     # A mixin has no object of its own; dispatch uses the instance's.
@@ -987,7 +991,9 @@ def _direct_body(b, spec_object, spec_method, params, binds, native) -> str | No
         c_at += 1
 
     call = f"_c_{c_func}(self._handle{''.join(', ' + e for e in exprs)})"
-    expr = _return_expr(b, call, ret_kind, ret_ref, binds)
+    expr = _return_expr(
+        b, call, ret_kind, ret_ref, binds, owner=_owner_expr(spec_method)
+    )
     if not arrays:
         return expr
     # A call that allocates is not in the zero-allocation hot class, so it can
@@ -1005,7 +1011,23 @@ def _direct_body(b, spec_object, spec_method, params, binds, native) -> str | No
     return lines, "_r"
 
 
-def _return_expr(b, call: str, ret_kind, ret_ref, binds, label: str = "") -> str:
+def _owner_expr(spec_method) -> str:
+    """The object a newly created one should be parented to, as source.
+
+    The rule itself lives in ``wgpu._api.base`` because the runtime dispatch
+    path needs it too; this only spells out the answer for the cases the
+    generator can settle ahead of time.
+    """
+    from wgpu._api.base import CONSUMING_METHODS
+
+    if spec_method is not None and spec_method.get("name") in CONSUMING_METHODS:
+        return "self._parent"
+    return "self"
+
+
+def _return_expr(
+    b, call: str, ret_kind, ret_ref, binds, label: str = "", owner: str = "self"
+) -> str:
     """Wrap a raw C call so it yields the public form of its return value."""
     if ret_kind is None or (ret_kind == "prim" and ret_ref != "bool"):
         return call
@@ -1020,7 +1042,7 @@ def _return_expr(b, call: str, ret_kind, ret_ref, binds, label: str = "") -> str
     cls = next(k for k, v in b.classes.items() if v == ret_ref)
     binds.add(("new_object", None))
     suffix = f", {label}" if label else ""
-    return f"_new_object({cls}, {call}, self{suffix})"
+    return f"_new_object({cls}, {call}, {owner}{suffix})"
 
 
 #: Member kinds a compiled descriptor body can fill with one statement each.
@@ -1137,7 +1159,13 @@ def _compiled_descriptor_body(b, spec_object, spec_method, idl_struct, binds, na
         else ""
     )
     call = _return_expr(
-        b, f"_c_{c_func}(self._handle, _d)", ret_kind, ret_ref, binds, label
+        b,
+        f"_c_{c_func}(self._handle, _d)",
+        ret_kind,
+        ret_ref,
+        binds,
+        label,
+        owner=_owner_expr(spec_method),
     )
     # Unlike the per-draw setters, these still report errors where they always
     # have: finish() is a checkpoint the rest of the API relies on.
@@ -1175,6 +1203,24 @@ def _unimplemented_body(spec_object, spec_method) -> str | None:
     if c_func not in paths.unimplemented_functions():
         return None
     return f"_unimplemented({c_func!r})"
+
+
+def _destroy_consuming_body(spec_object, spec_method, binds) -> str | None:
+    """Destroy for the handles wgpu-native frees on the way out.
+
+    See :func:`bindgen.paths.destroy_consumes_handle`: for these, the release
+    that normally follows a destroy would abort the process, so the object has
+    to stop treating its handle as something it still owns.
+    """
+    from . import naming
+
+    if spec_object is None or binds is None or spec_method["name"] != "destroy":
+        return None
+    c_func = naming.c_method_func(spec_object, spec_method["name"])
+    if c_func not in paths.destroy_consumes_handle():
+        return None
+    binds.add(("func", c_func))
+    return f"_ov.destroy_consuming(self, _c_{c_func})"
 
 
 def _emit_method(
@@ -1228,6 +1274,8 @@ def _emit_method(
         )
     else:
         call = _unimplemented_body(spec_object, spec_method)
+        if call is None:
+            call = _destroy_consuming_body(spec_object, spec_method, binds)
         if call is None:
             # Methods that hand raw bytes to C carry extra IDL parameters (the
             # slice window), so this is tried before the arity check.

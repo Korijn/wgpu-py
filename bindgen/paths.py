@@ -40,6 +40,62 @@ def unimplemented_functions() -> frozenset[str]:
     )
 
 
+#: wgpu-native's implementation of the C API, read to find the handles whose
+#: ``Destroy`` already frees what their ``Drop`` will free again.
+LIB_RS = NATIVE_ROOT / "src" / "lib.rs"
+
+
+def _first_drop_call(body: str) -> str | None:
+    import re
+
+    match = re.search(r"\b(\w+_drop)\(", body)
+    return match.group(1) if match else None
+
+
+def destroy_consumes_handle() -> frozenset[str]:
+    """The ``wgpuXDestroy`` functions that also free the handle for good.
+
+    Destroying is meant to be quite different from releasing: the wgpu-core
+    resource enters a destroyed state, while the handle stays valid, so
+    ``destroy()`` followed by a release is the ordinary case. For query sets it
+    is fatal. wgpu-native implements ``wgpuQuerySetDestroy`` by *dropping* the
+    wgpu-core resource -- its own source says "FIXME: we shouldn't be using
+    drop to implement this!" -- and then the handle's ``Drop`` impl drops it a
+    second time when the release lands. wgpu-core panics on the vacant slot,
+    and a Rust panic cannot unwind across FFI, so the process aborts.
+
+    Rather than name query sets here, the pair is *found*: a ``Destroy`` and a
+    ``Drop`` that call the same ``*_drop`` for the same object. A submodule
+    bump that fixes this upstream, or breaks another object the same way, is
+    then picked up without an edit -- and if the search ever matches nothing,
+    that is the fix having landed, not the check silently lapsing.
+    """
+    import re
+
+    if not LIB_RS.exists():
+        return frozenset()
+    source = LIB_RS.read_text()
+    destroyed = {
+        name: fn
+        for name, body in re.findall(
+            r'pub unsafe extern "C" fn wgpu(\w+)Destroy\b(.*?)\n\}', source, re.S
+        )
+        if (fn := _first_drop_call(body))
+    }
+    dropped = {
+        name: fn
+        for name, body in re.findall(
+            r"impl Drop for WGPU(\w+)Impl \{(.*?)\n\}", source, re.S
+        )
+        if (fn := _first_drop_call(body))
+    }
+    return frozenset(
+        f"wgpu{name}Destroy"
+        for name, fn in destroyed.items()
+        if dropped.get(name) == fn
+    )
+
+
 def native_version() -> str:
     """The wgpu-native version this build is pinned to.
 

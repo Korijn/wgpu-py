@@ -540,3 +540,120 @@ def test_hand_written_hooks_all_match_the_idl():
         assert member in b.idl.classes[cls_name].attributes
     for cls_name, member in genapi.HAND_WRITTEN:
         assert member in b.idl.classes[cls_name].functions
+
+
+# -- lifetimes ---------------------------------------------------------------
+
+
+def test_destroying_a_query_set_does_not_double_free(wgpu, device):
+    """Destroy then release used to abort the process, not raise.
+
+    ``wgpuQuerySetDestroy`` drops the wgpu-core resource, and the handle's own
+    ``Drop`` drops it again when the release lands; wgpu-core panics on the
+    vacant slot, and a Rust panic cannot unwind across FFI. If this regresses
+    it takes the whole test run with it, so there is nothing subtle to assert
+    -- reaching the end is the assertion.
+    """
+    import gc
+
+    for _ in range(4):
+        query_set = device.create_query_set(type=wgpu.QueryType.occlusion, count=2)
+        query_set.destroy()
+        query_set.destroy()  # idempotent, as the spec says
+        del query_set
+        gc.collect()
+
+
+def test_the_double_free_is_still_the_one_wgpu_native_has():
+    """The suppression above is derived from wgpu-native, not asserted here.
+
+    If upstream fixes ``Destroy`` (its own source says it should), this set
+    goes empty and the release starts happening again -- correctly, and with
+    no edit. This test exists so that day is visible rather than silent.
+    """
+    assert paths.destroy_consumes_handle() == {"wgpuQuerySetDestroy"}
+
+
+def test_finished_encoders_do_not_outlive_their_output(wgpu, device):
+    """``finish()`` invalidates the encoder, so its product must not pin it."""
+    import gc
+
+    def encoders():
+        return wgpu.diagnostics.object_counts.get_dict()["CommandEncoder"]["count"]
+
+    gc.collect()
+    before = encoders()
+    buffers = []
+    for _ in range(3):
+        encoder = device.create_command_encoder()
+        buffers.append(encoder.finish())
+    del encoder
+    gc.collect()
+    assert encoders() == before
+    assert all(b is not None for b in buffers)
+
+
+def test_a_device_has_its_queue_from_the_start(wgpu, device):
+    """Counted lazily, a device dropped without a ``.queue`` never adds one."""
+    import gc
+
+    def queues():
+        return wgpu.diagnostics.object_counts.get_dict()["Queue"]["count"]
+
+    gc.collect()
+    before = queues()
+    device2 = device.adapter.request_device_sync()
+    assert queues() == before + 1
+    assert device2.queue is device2.queue
+    del device2
+    gc.collect()
+    assert queues() == before
+
+
+# -- what counts as a spec object --------------------------------------------
+
+
+def test_only_the_idl_says_which_handles_are_labelled_objects(wgpu):
+    """``GPUObjectBase`` is a spec mixin, not "everything with a handle".
+
+    The IDL spells out which interfaces include it, and the adapter is not one
+    of them -- it has no label, and asking it for its device is a question with
+    no answer. Both are still handles Python owns and releases.
+    """
+    from wgpu._api.base import GPUHandle, GPUObjectBase
+
+    adapter = wgpu.gpu.request_adapter_sync()
+    assert isinstance(adapter, GPUHandle)
+    assert not isinstance(adapter, GPUObjectBase)
+    assert not hasattr(adapter, "label")
+    assert isinstance(adapter.request_device_sync(), GPUObjectBase)
+
+
+def test_every_labelled_object_belongs_to_a_device(wgpu, device):
+    """The property that the split above is what makes true."""
+    from wgpu._api.base import GPUObjectBase
+
+    for obj in (
+        device,
+        device.queue,
+        device.create_buffer(size=16, usage="COPY_SRC"),
+        device.create_command_encoder(),
+    ):
+        assert isinstance(obj, GPUObjectBase)
+        assert obj._device is device
+
+
+def test_unreleasable_object_types_get_no_class(wgpu):
+    """A class nobody can hold an instance of is worse than no class.
+
+    wgpu-native does not implement ``wgpuExternalTextureRelease`` -- external
+    textures come from browser image sources, which do not exist here -- so a
+    ``GPUExternalTexture`` could only ever be a name in the object counts that
+    never moves off zero.
+    """
+    import wgpu._generated.classes as classes
+    from wgpu._generated.objects import OBJECTS
+
+    assert "external_texture" in OBJECTS  # still in the C spec
+    assert not hasattr(classes, "GPUExternalTexture")
+    assert "ExternalTexture" not in wgpu.diagnostics.object_counts.get_dict()

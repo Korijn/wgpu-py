@@ -584,19 +584,19 @@ def _instance_handle():
 
 
 def _live_object_counts():
-    """Read the per-class counters kept by ``wgpu._api.base.GPUObjectBase``.
+    """Read the per-class counters kept by ``wgpu._api.base.GPUHandle``.
 
     Walking the class tree here is what lets the counting itself be a single
     item store on a class attribute -- object creation is a hot path, and a
     diagnostic nobody is reading should not be charging it for a dict of names.
     """
     try:
-        from wgpu._api.base import GPUObjectBase
+        from wgpu._api.base import GPUHandle
     except ImportError:  # no-cover
         return {}
 
     counts = {}
-    todo = [GPUObjectBase]
+    todo = [GPUHandle]
     while todo:
         cls = todo.pop()
         todo.extend(cls.__subclasses__())

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from wgpu._api.base import owner_for as _owner_for
+
 from .awaitable import WgpuPromise
 
 
@@ -241,7 +243,8 @@ class Invoker:
             def wrap(value, caller):
                 if not value:
                     return None if method.ret_optional else value
-                return self._wrap_object(ret_ref, value, caller._pump, caller)
+                owner = _owner_for(caller, method.py)
+                return self._wrap_object(ret_ref, value, caller._pump, owner)
         else:
 
             def wrap(value, caller):
@@ -278,7 +281,9 @@ class Invoker:
             # adapter info) return the filled struct, not the status code.
             _, ref, ptr = outs[0]
             return self.structs.read(ref, ptr[0])
-        return self.wrap_return(method, c_ret, pump, caller, py_args)
+        return self.wrap_return(
+            method, c_ret, pump, _owner_for(caller, method.py), py_args
+        )
 
     def _call_async(
         self, method, cfunc, self_handle, c_args, keep, pump, caller=None, label=""

@@ -6,16 +6,9 @@
 
 """``GPU*`` classes for wgpu-native objects with no Web IDL counterpart."""
 
-from wgpu._api.base import GPUObjectBase
+from wgpu._api.base import GPUHandle
 
-class GPUExternalTexture(GPUObjectBase):
-    _spec_name = 'external_texture'
-
-    def set_label(self, label):
-        return self._call('set_label', label)
-
-
-class GPUInstance(GPUObjectBase):
+class GPUInstance(GPUHandle):
     _spec_name = 'instance'
 
     def create_surface(self, descriptor):
@@ -49,7 +42,7 @@ class GPUInstance(GPUObjectBase):
         return self._call('wait_any', future_count, futures, timeout_NS)
 
 
-class GPUSurface(GPUObjectBase):
+class GPUSurface(GPUHandle):
     _spec_name = 'surface'
 
     def configure(self, config):
