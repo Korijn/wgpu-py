@@ -25,6 +25,13 @@ class EnumMap(dict):
     def __missing__(self, key):
         if isinstance(key, int) and not isinstance(key, bool):
             return key  # already a C value
+        if isinstance(key, str) and "_" in key:
+            # wgpu-py has always taken "vertex_writable_storage" for the spec's
+            # "vertex-writable-storage". Cached so it only converts once.
+            hyphenated = key.replace("_", "-")
+            if dict.__contains__(self, hyphenated):
+                value = self[hyphenated] = dict.__getitem__(self, hyphenated)
+                return value
         options = ", ".join(repr(k) for k in self if isinstance(k, str))
         raise ValueError(f"Invalid value for {self.name}: {key!r}. Expected {options}.")
 

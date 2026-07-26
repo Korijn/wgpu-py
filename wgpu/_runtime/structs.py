@@ -60,7 +60,9 @@ class StructBuilder:
             value = getattr(ptr, mem.c, None)
             if mem.array:
                 out[mem.py] = self._read_array(ptr, mem)
-            elif mem.kind == "string":
+            elif mem.kind in ("string", "out_string"):
+                # out_string is a WGPUStringView the implementation fills in --
+                # adapter vendor/device/description arrive this way.
                 out[mem.py] = _string(self.ffi, value)
             elif mem.kind == "enum":
                 out[mem.py] = self.enums.FROM_INT.get(mem.ref, {}).get(

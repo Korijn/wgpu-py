@@ -53,6 +53,37 @@ def _annotate(idl, typename: str, *, optional: bool = False) -> str:
 # ---- enums -----------------------------------------------------------------
 
 
+def _web_name(spec_entry: str) -> str:
+    """``2D_array`` -> ``2d-array``, ``discrete_GPU`` -> ``discrete-gpu``.
+
+    The spelling the Web API uses, derived for enums the IDL does not define.
+    """
+    return spec_entry.lower().replace("_", "-")
+
+
+def _native_features(lib) -> list[tuple[str, int]]:
+    """wgpu-native's extra feature names, read from its own header."""
+    header = paths.FFI_DIR / "wgpu.h"
+    if not header.exists():
+        return []
+    out = []
+    seen = set()
+    for c_name in sorted(set(re.findall(r"WGPUNativeFeature_(\w+)", header.read_text()))):
+        if c_name == "Force32":
+            continue  # a sizing sentinel, not a feature
+        name = bridge.camel_to_snake(c_name).replace("_", "-")
+        if name in seen:
+            continue
+        value = getattr(lib, f"WGPUNativeFeature_{c_name}", None)
+        if value is None:
+            # Named in the header but not compiled in (behind an #if, or only
+            # mentioned in docs). Skipping keeps this self-correcting.
+            continue
+        seen.add(name)
+        out.append((name, int(value)))
+    return out
+
+
 def generate_api_enums(b: bridge.Bridge, lib) -> str:
     """Emit the string-valued enums plus their string -> C-integer maps.
 
@@ -80,6 +111,8 @@ def generate_api_enums(b: bridge.Bridge, lib) -> str:
         '        raise RuntimeError("Cannot instantiate an enum.")',
         "",
     ]
+    mapped = set(b.enum_types.values())
+    c_only_enums = [e for e in b.spec["enums"] if e["name"] not in mapped]
     names = sorted(b.idl.enums)
     lines.append("")
     lines.append("__all__ = [")
@@ -122,6 +155,42 @@ def generate_api_enums(b: bridge.Bridge, lib) -> str:
             pairs.append((value, c_int))
         lines.append(f"TO_INT[{spec_name!r}] = _EnumMap({idl_name!r}, {{")
         lines += [f"    {v!r}: {i}," for v, i in pairs]
+        lines.append("})")
+        lines.append("")
+
+    # wgpu-native extends WGPUFeatureName with its own features. They are not
+    # in either spec file -- only in wgpu.h -- but they share the enum's value
+    # space and users do request them by name, so they are folded in here.
+    native = _native_features(lib)
+    if native:
+        lines.append("")
+        lines.append("# wgpu-native's own features, from wgpu.h. Not WebGPU, but")
+        lines.append("# they extend the same enum and are requested the same way.")
+        lines.append("TO_INT['feature_name'].update({")
+        lines += [f"    {name!r}: {value}," for name, value in native]
+        lines.append("})")
+        lines.append("")
+
+    # Enums the C API has but the Web IDL does not (backend type, adapter type,
+    # native-only features). They never come *in* from user code, but they do
+    # come back out of getters, and an integer there would be useless.
+    lines.append("")
+    lines.append("# C-only enums: no Web IDL counterpart, but their values are")
+    lines.append("# reported by getters such as adapter.info.")
+    for item in c_only_enums:
+        spec_name = item["name"]
+        pairs = []
+        for entry in item["entries"]:
+            if entry is None:
+                continue
+            c_int = int(getattr(lib, naming.c_enum_value(spec_name, entry["name"])))
+            pairs.append((_web_name(entry["name"]), c_int))
+        seen = set()
+        lines.append(f"TO_INT[{spec_name!r}] = _EnumMap({spec_name!r}, {{")
+        for v, i in pairs:
+            if v not in seen:
+                seen.add(v)
+                lines.append(f"    {v!r}: {i},")
         lines.append("})")
         lines.append("")
 

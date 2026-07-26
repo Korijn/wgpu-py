@@ -52,12 +52,11 @@ class GPUAdapterInfo(dict):
     @property
     def summary(self) -> str:
         """A one-line description, handy in logs and bug reports."""
-        parts = [
-            self.get("device") or self.get("description") or "unknown",
-            self.get("backend_type", ""),
-            self.get("adapter_type", ""),
-        ]
-        return " | ".join(str(p) for p in parts if p)
+        device = self.get("device") or self.get("description") or "unknown"
+        return (
+            f"{device} ({self.get('adapter_type', '')}) "
+            f"via {self.get('backend_type', '')}"
+        )
 
 
 class GPUCompilationMessage:

@@ -866,6 +866,247 @@ TO_INT['vertex_step_mode'] = _EnumMap('VertexStepMode', {
 })
 
 
+# wgpu-native's own features, from wgpu.h. Not WebGPU, but
+# they extend the same enum and are requested the same way.
+TO_INT['feature_name'].update({
+    'acceleration-structure-binding-array': 196670,
+    'address-mode-clamp-to-border': 196626,
+    'address-mode-clamp-to-zero': 196625,
+    'buffer-binding-array': 196623,
+    'clear-texture': 196630,
+    'conservative-rasterization': 196629,
+    'cooperative-matrix': 196667,
+    'immediates': 196609,
+    'mappable-primary-buffers': 196622,
+    'memory-decoration-coherent': 196671,
+    'memory-decoration-volatile': 196672,
+    'multi-draw-indirect-count': 196612,
+    'multisample-array': 196666,
+    'multiview': 196632,
+    'partially-bound-binding-array': 196618,
+    'pipeline-cache': 196651,
+    'pipeline-statistics-query': 196616,
+    'polygon-mode-line': 196627,
+    'polygon-mode-point': 196628,
+    'ray-query': 196636,
+    'sampled-texture-and-storage-buffer-array-non-uniform-indexing': 196615,
+    'selective-multiview': 196664,
+    'shader-barycentrics': 196663,
+    'shader-draw-index': 196669,
+    'shader-early-depth-test': 196640,
+    'shader-f64': 196637,
+    'shader-float32-atomic': 196647,
+    'shader-i16': 196638,
+    'shader-int64': 196646,
+    'shader-int64-atomic-all-ops': 196653,
+    'shader-int64-atomic-min-max': 196652,
+    'shader-per-vertex': 196668,
+    'storage-resource-binding-array': 196617,
+    'storage-texture-array-non-uniform-indexing': 196624,
+    'subgroup': 196641,
+    'subgroup-barrier': 196643,
+    'subgroup-vertex': 196642,
+    'texture-adapter-specific-format-features': 196610,
+    'texture-atomic': 196648,
+    'texture-binding-array': 196614,
+    'texture-compression-astc-hdr': 196620,
+    'texture-format16bit-norm': 196619,
+    'texture-format-nv12': 196634,
+    'texture-format-p010': 196649,
+    'texture-int64-atomic': 196656,
+    'timestamp-query-inside-encoders': 196644,
+    'timestamp-query-inside-passes': 196645,
+    'vertex-attribute64bit': 196633,
+    'vertex-writable-storage': 196613,
+})
+
+
+# C-only enums: no Web IDL counterpart, but their values are
+# reported by getters such as adapter.info.
+TO_INT['adapter_type'] = _EnumMap('adapter_type', {
+    'discrete-gpu': 1,
+    'integrated-gpu': 2,
+    'cpu': 3,
+    'unknown': 4,
+})
+
+TO_INT['backend_type'] = _EnumMap('backend_type', {
+    'undefined': 0,
+    'null': 1,
+    'webgpu': 2,
+    'd3d11': 3,
+    'd3d12': 4,
+    'metal': 5,
+    'vulkan': 6,
+    'opengl': 7,
+    'opengles': 8,
+})
+
+TO_INT['callback_mode'] = _EnumMap('callback_mode', {
+    'wait-any-only': 1,
+    'allow-process-events': 2,
+    'allow-spontaneous': 3,
+})
+
+TO_INT['compilation_info_request_status'] = _EnumMap('compilation_info_request_status', {
+    'success': 1,
+    'callback-cancelled': 2,
+})
+
+TO_INT['component_swizzle'] = _EnumMap('component_swizzle', {
+    'undefined': 0,
+    'zero': 1,
+    'one': 2,
+    'r': 3,
+    'g': 4,
+    'b': 5,
+    'a': 6,
+})
+
+TO_INT['composite_alpha_mode'] = _EnumMap('composite_alpha_mode', {
+    'auto': 0,
+    'opaque': 1,
+    'premultiplied': 2,
+    'unpremultiplied': 3,
+    'inherit': 4,
+})
+
+TO_INT['create_pipeline_async_status'] = _EnumMap('create_pipeline_async_status', {
+    'success': 1,
+    'callback-cancelled': 2,
+    'validation-error': 3,
+    'internal-error': 4,
+})
+
+TO_INT['error_type'] = _EnumMap('error_type', {
+    'no-error': 1,
+    'validation': 2,
+    'out-of-memory': 3,
+    'internal': 4,
+    'unknown': 5,
+})
+
+TO_INT['feature_level'] = _EnumMap('feature_level', {
+    'undefined': 0,
+    'compatibility': 1,
+    'core': 2,
+})
+
+TO_INT['instance_feature_name'] = _EnumMap('instance_feature_name', {
+    'timed-wait-any': 1,
+    'shader-source-spirv': 2,
+    'multiple-devices-per-adapter': 3,
+})
+
+TO_INT['map_async_status'] = _EnumMap('map_async_status', {
+    'success': 1,
+    'callback-cancelled': 2,
+    'error': 3,
+    'aborted': 4,
+})
+
+TO_INT['optional_bool'] = _EnumMap('optional_bool', {
+    'false': 0,
+    'true': 1,
+    'undefined': 2,
+})
+
+TO_INT['pop_error_scope_status'] = _EnumMap('pop_error_scope_status', {
+    'success': 1,
+    'callback-cancelled': 2,
+    'error': 3,
+})
+
+TO_INT['predefined_color_space'] = _EnumMap('predefined_color_space', {
+    'srgb': 1,
+    'display-p3': 2,
+})
+
+TO_INT['present_mode'] = _EnumMap('present_mode', {
+    'undefined': 0,
+    'fifo': 1,
+    'fifo-relaxed': 2,
+    'immediate': 3,
+    'mailbox': 4,
+})
+
+TO_INT['queue_work_done_status'] = _EnumMap('queue_work_done_status', {
+    'success': 1,
+    'callback-cancelled': 2,
+    'error': 3,
+})
+
+TO_INT['request_adapter_status'] = _EnumMap('request_adapter_status', {
+    'success': 1,
+    'callback-cancelled': 2,
+    'unavailable': 3,
+    'error': 4,
+})
+
+TO_INT['request_device_status'] = _EnumMap('request_device_status', {
+    'success': 1,
+    'callback-cancelled': 2,
+    'error': 3,
+})
+
+TO_INT['s_type'] = _EnumMap('s_type', {
+    'shader-source-spirv': 1,
+    'shader-source-wgsl': 2,
+    'render-pass-max-draw-count': 3,
+    'surface-source-metal-layer': 4,
+    'surface-source-windows-hwnd': 5,
+    'surface-source-xlib-window': 6,
+    'surface-source-wayland-surface': 7,
+    'surface-source-android-native-window': 8,
+    'surface-source-xcb-window': 9,
+    'surface-color-management': 10,
+    'request-adapter-webxr-options': 11,
+    'texture-component-swizzle-descriptor': 12,
+    'external-texture-binding-layout': 13,
+    'external-texture-binding-entry': 14,
+    'compatibility-mode-limits': 15,
+    'texture-binding-view-dimension': 16,
+})
+
+TO_INT['status'] = _EnumMap('status', {
+    'success': 1,
+    'error': 2,
+})
+
+TO_INT['surface_get_current_texture_status'] = _EnumMap('surface_get_current_texture_status', {
+    'success-optimal': 1,
+    'success-suboptimal': 2,
+    'timeout': 3,
+    'outdated': 4,
+    'lost': 5,
+    'error': 6,
+})
+
+TO_INT['tone_mapping_mode'] = _EnumMap('tone_mapping_mode', {
+    'standard': 1,
+    'extended': 2,
+})
+
+TO_INT['wait_status'] = _EnumMap('wait_status', {
+    'success': 1,
+    'timed-out': 2,
+    'error': 3,
+})
+
+TO_INT['WGSL_language_feature_name'] = _EnumMap('WGSL_language_feature_name', {
+    'readonly-and-readwrite-storage-textures': 1,
+    'packed4x8-integer-dot-product': 2,
+    'unrestricted-pointer-parameters': 3,
+    'pointer-composite-access': 4,
+    'uniform-buffer-standard-layout': 5,
+    'subgroup-id': 6,
+    'texture-and-sampler-let': 7,
+    'subgroup-uniformity': 8,
+    'texture-formats-tier1': 9,
+    'linear-indexing': 10,
+})
+
+
 #: C-spec enum name -> mapping of C integer back to its string.
 FROM_INT: dict[str, dict[int, str]] = {
     name: {i: v for v, i in table.items() if isinstance(v, str)}
