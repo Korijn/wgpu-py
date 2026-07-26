@@ -227,7 +227,7 @@ class GPUCommandEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUObjectBase):
 
     def copy_buffer_to_buffer(self, source: GPUBuffer, source_offset: int, destination: GPUBuffer, destination_offset: int, size: int | None = None) -> None:
         """GPUCommandEncoder.copyBufferToBuffer -- see the WebGPU specification."""
-        return _c_wgpuCommandEncoderCopyBufferToBuffer(self._handle, source._handle, source_offset, destination._handle, destination_offset, (_WHOLE64 if size is None else size))
+        return _c_wgpuCommandEncoderCopyBufferToBuffer(self._handle, source._handle, source_offset, destination._handle, destination_offset, (_WHOLE64 if not size else size))
 
     def copy_buffer_to_texture(self, source: structs.TexelCopyBufferInfoStruct, destination: structs.TexelCopyTextureInfoStruct, copy_size: tuple[int, int, int] | structs.Extent3DStruct) -> None:
         """GPUCommandEncoder.copyBufferToTexture -- see the WebGPU specification."""
@@ -243,7 +243,7 @@ class GPUCommandEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUObjectBase):
 
     def clear_buffer(self, buffer: GPUBuffer, offset: int = 0, size: int | None = None) -> None:
         """GPUCommandEncoder.clearBuffer -- see the WebGPU specification."""
-        return _c_wgpuCommandEncoderClearBuffer(self._handle, buffer._handle, offset, (_WHOLE64 if size is None else size))
+        return _c_wgpuCommandEncoderClearBuffer(self._handle, buffer._handle, offset, (_WHOLE64 if not size else size))
 
     def resolve_query_set(self, query_set: GPUQuerySet, first_query: int, query_count: int, destination: GPUBuffer, destination_offset: int) -> None:
         """GPUCommandEncoder.resolveQuerySet -- see the WebGPU specification."""
@@ -515,11 +515,11 @@ class GPURenderBundleEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBinding
 
     def set_index_buffer(self, buffer: GPUBuffer, index_format: enums.IndexFormatEnum, offset: int = 0, size: int | None = None) -> None:
         """GPURenderBundleEncoder.setIndexBuffer -- see the WebGPU specification."""
-        return _c_wgpuRenderBundleEncoderSetIndexBuffer(self._handle, buffer._handle, _E_index_format[index_format], offset, (_WHOLE64 if size is None else size))
+        return _c_wgpuRenderBundleEncoderSetIndexBuffer(self._handle, buffer._handle, _E_index_format[index_format], offset, (_WHOLE64 if not size else size))
 
     def set_vertex_buffer(self, slot: int, buffer: GPUBuffer, offset: int = 0, size: int | None = None) -> None:
         """GPURenderBundleEncoder.setVertexBuffer -- see the WebGPU specification."""
-        return _c_wgpuRenderBundleEncoderSetVertexBuffer(self._handle, slot, (buffer._handle if buffer is not None else _NULL), offset, (_WHOLE64 if size is None else size))
+        return _c_wgpuRenderBundleEncoderSetVertexBuffer(self._handle, slot, (buffer._handle if buffer is not None else _NULL), offset, (_WHOLE64 if not size else size))
 
     def draw(self, vertex_count: int, instance_count: int = 1, first_vertex: int = 0, first_instance: int = 0) -> None:
         """GPURenderBundleEncoder.draw -- see the WebGPU specification."""
@@ -589,11 +589,11 @@ class GPURenderPassEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCo
 
     def set_index_buffer(self, buffer: GPUBuffer, index_format: enums.IndexFormatEnum, offset: int = 0, size: int | None = None) -> None:
         """GPURenderPassEncoder.setIndexBuffer -- see the WebGPU specification."""
-        return _c_wgpuRenderPassEncoderSetIndexBuffer(self._handle, buffer._handle, _E_index_format[index_format], offset, (_WHOLE64 if size is None else size))
+        return _c_wgpuRenderPassEncoderSetIndexBuffer(self._handle, buffer._handle, _E_index_format[index_format], offset, (_WHOLE64 if not size else size))
 
     def set_vertex_buffer(self, slot: int, buffer: GPUBuffer, offset: int = 0, size: int | None = None) -> None:
         """GPURenderPassEncoder.setVertexBuffer -- see the WebGPU specification."""
-        return _c_wgpuRenderPassEncoderSetVertexBuffer(self._handle, slot, (buffer._handle if buffer is not None else _NULL), offset, (_WHOLE64 if size is None else size))
+        return _c_wgpuRenderPassEncoderSetVertexBuffer(self._handle, slot, (buffer._handle if buffer is not None else _NULL), offset, (_WHOLE64 if not size else size))
 
     def draw(self, vertex_count: int, instance_count: int = 1, first_vertex: int = 0, first_instance: int = 0) -> None:
         """GPURenderPassEncoder.draw -- see the WebGPU specification."""

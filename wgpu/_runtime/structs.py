@@ -100,8 +100,19 @@ class StructBuilder:
         self._fill(ptr, desc, mapping, keep)
         return ptr
 
-    def _fill(self, ptr, desc, mapping: dict, keep: list):
-        if any("-" in k for k in mapping):
+    def _fill(self, ptr, desc, mapping, keep: list):
+        if not hasattr(mapping, "keys"):
+            # The spec lets the small geometric structs be written positionally
+            # -- size=(64, 64, 1), color=(0, 0, 0, 1), origin=(0, 0) -- so a
+            # sequence maps onto the leading members, in declaration order.
+            values = list(mapping)
+            if len(values) > len(desc.members):
+                raise ValueError(
+                    f"{desc.c_name}: got {len(values)} values but the struct has "
+                    f"{len(desc.members)} fields"
+                )
+            mapping = {m.py: v for m, v in zip(desc.members, values)}
+        elif any("-" in k for k in mapping):
             # wgpu-py has always accepted the WebGPU spec's hyphenated spelling
             # of struct fields ("max-bind-groups") alongside the Pythonic one.
             mapping = {k.replace("-", "_"): v for k, v in mapping.items()}
@@ -210,7 +221,7 @@ class StructBuilder:
             keep.append(item)
 
     def _set_struct(self, ptr, mem, value, keep: list):
-        child = self._build_into_new(mem.ref, value or {}, keep)
+        child = self._build_into_new(mem.ref, {} if value is None else value, keep)
         if mem.pointer:  # field is a pointer to the struct
             setattr(ptr, mem.c, child)
         else:  # field embeds the struct by value

@@ -808,7 +808,9 @@ def _direct_body(b, spec_object, spec_method, params, binds, native) -> str | No
                 # that as an all-ones sentinel of the parameter's own width.
                 width = ffi.sizeof(c_sig[i + 1]) * 8
                 binds.add(("whole", width))
-                exprs.append(f"(_WHOLE{width} if {name} is None else {name})")
+                # A falsy size means "the rest of the resource" -- wgpu-py has
+                # always accepted 0 as well as None for this.
+                exprs.append(f"(_WHOLE{width} if not {name} else {name})")
             else:
                 exprs.append(name)  # cffi coerces ints and floats itself
         elif kind in ("enum", "bitflag"):
