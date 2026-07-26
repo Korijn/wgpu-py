@@ -96,13 +96,22 @@ def _whole_size(buffer):
     return buffer.size if buffer is not None else 0
 
 
+#: GLSL declares its stage nowhere the compiler can see, so wgpu-py has always
+#: read it off the shader's label. Not a guess: without it the source cannot be
+#: compiled at all, and the alternative is refusing GLSL outright.
+_GLSL_STAGES = {"comp": "COMPUTE", "vert": "VERTEX", "frag": "FRAGMENT"}
+
+
 def _shader_source(builder, out: dict, keep: list) -> None:
     """WGSL source is inline on the web; C chains a WGPUShaderSourceWGSL."""
     code = out.pop("code", None)
     if code is None:
         return
     if isinstance(code, str):
-        out["_chain"] = ("shader_source_WGSL", {"code": code})
+        if _looks_like_glsl(code):
+            out["_chain"] = ("shader_source_GLSL", _glsl(code, out.get("label") or ""))
+        else:
+            out["_chain"] = ("shader_source_WGSL", {"code": code})
         return
     # Anything else is SPIR-V: a blob of 32-bit words, which C takes as a word
     # count plus a uint32 pointer rather than as a string.
@@ -115,6 +124,35 @@ def _shader_source(builder, out: dict, keep: list) -> None:
         "shader_source_SPIRV",
         {"code_size": view.nbytes // 4, "code": view.cast("I")},
     )
+
+
+def _looks_like_glsl(code: str) -> bool:
+    """GLSL opens with a ``#version`` line; WGSL has stage attributes."""
+    if any(marker in code for marker in ("@compute", "@vertex", "@fragment")):
+        return False
+    return code.lstrip().startswith("#version ")
+
+
+def _glsl(code: str, label: str) -> dict:
+    from wgpu._generated import apiflags
+
+    # WGPUShaderSourceGLSL is wgpu-native's own, so it is not in webgpu.json
+    # and not generated. Registering it here keeps the cost on the GLSL path.
+    from wgpu.backends.wgpu_native import native_structs  # noqa: F401
+
+    label = label.lower()
+    stage = next((v for k, v in _GLSL_STAGES.items() if k in label), None)
+    if stage is None:
+        raise ValueError(
+            "A GLSL shader must say which stage it is for in its label -- one "
+            f"of {sorted(_GLSL_STAGES)}. Got label {label!r}."
+        )
+    source = {"code": code, "stage": getattr(apiflags.ShaderStage, stage)}
+    if stage == "VERTEX":
+        # naga spells the vertex index the Vulkan way; GLSL code written for
+        # OpenGL says gl_VertexID, so the two are bridged with a define.
+        source["defines"] = [{"name": "gl_VertexID", "value": "gl_VertexIndex"}]
+    return source
 
 
 #: Adapters for shapes no declaration in either spec covers, because the

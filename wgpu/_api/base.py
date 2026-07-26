@@ -53,6 +53,10 @@ class GPUObjectBase(Mixin):
         # because they sit in front of per-frame calls.
         "_warned_aspect_keys",
         "_cache",
+        # Objects a render bundle encoder was handed. It reads them again at
+        # finish(), so it -- alone among the encoders -- has to outlive the
+        # caller's references to them.
+        "_retained",
         # Memoryviews handed out over a buffer's mapped range. They point at
         # memory wgpu-native reclaims on unmap, so they are released there --
         # reading a released view raises, where reading freed memory would
@@ -65,6 +69,16 @@ class GPUObjectBase(Mixin):
     )
 
     _spec_name = ""
+
+    #: How many of this class are alive, in a one-element list so that the hot
+    #: path is a class-attribute load and an item store -- no dict of names, no
+    #: call. Each subclass gets its own below; ``wgpu.diagnostics.object_counts``
+    #: reads them back by walking the class tree, which nothing hot does.
+    _live = [0]
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls._live = [0]
 
     def __init__(self, handle, pump=None, parent=None, label=""):
         self._handle = handle
@@ -80,6 +94,8 @@ class GPUObjectBase(Mixin):
         self._cache = {}
         self._map_status = (0, 0, 0)
         self._mapped_views = []
+        self._retained = None
+        self._live[0] += 1
 
     # -- identity ----------------------------------------------------------
 
@@ -163,6 +179,7 @@ class GPUObjectBase(Mixin):
     def _release(self):
         handle, self._handle = self._handle, None
         if handle is not None and self._spec_name:
+            self._live[0] -= 1
             get_api().release(self._spec_name, handle)
 
     def __del__(self):

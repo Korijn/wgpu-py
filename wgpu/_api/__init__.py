@@ -28,6 +28,7 @@ from wgpu._generated.apiclasses import (
     GPUDevice,
     GPUObjectBase,
     GPUQueue,
+    GPURenderBundleEncoder,
     GPUTexture,
     GPUTextureView,
 )
@@ -59,9 +60,14 @@ GPUDevice.adapter = _x.device_adapter
 GPUQueue.read_buffer = _x.queue_read_buffer
 GPUQueue.read_texture = _x.queue_read_texture
 GPUAdapter.summary = _x.adapter_summary
+GPUDevice._poll = _ov.device_poll
+GPUDevice._poll_wait = _ov.device_poll_wait
 GPUTexture.size = _x.texture_size
+GPUTexture._nbytes = _x.texture_nbytes
 GPUTextureView.size = _x.texture_view_size
 GPUTextureView.texture = _x.texture_view_texture
+# Alone among the encoders, this one reads its arguments again at finish().
+_ov.retain_on(GPURenderBundleEncoder)
 
 __all__ = [
     *_generated_all,
@@ -73,6 +79,9 @@ __all__ = [
     "GPUDeviceLostInfo",
     "GPUError",
     "GPUInternalError",
+    # The IDL's own base interface: every GPU object is one, and downstream
+    # code isinstance-checks against it.
+    "GPUObjectBase",
     "GPUOutOfMemoryError",
     "GPUPipelineError",
     "GPUPromise",

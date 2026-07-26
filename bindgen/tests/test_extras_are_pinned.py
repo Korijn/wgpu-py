@@ -104,6 +104,29 @@ def test_pipeline_statistic_names_match_the_header(lib):
         assert _PIPELINE_STATISTICS[getattr(PipelineStatisticName, name)] == int(value)
 
 
+def test_native_struct_descriptors_match_the_header():
+    """The hand-written descriptors for wgpu-native's own extension structs.
+
+    These cannot be generated -- wgpu.h is a C header, not a machine-readable
+    spec -- so they are written out, and this is what keeps them honest. A
+    field that has moved or been renamed would otherwise write to the wrong
+    offset, which corrupts memory rather than raising.
+    """
+    sys.path.insert(0, str(paths.REPO_ROOT))
+    from wgpu._native import ffi
+    from wgpu.backends.wgpu_native.native_structs import NATIVE_STRUCTS
+
+    for name, descriptor in NATIVE_STRUCTS.items():
+        fields = dict(ffi.typeof(descriptor.c_name).fields)
+        for member in descriptor.members:
+            assert member.c in fields, f"{name}.{member.c} is not in {fields}"
+            if member.count_c:
+                assert member.count_c in fields, f"{name}.{member.count_c}"
+        if descriptor.category == "extension":
+            assert "chain" in fields, f"{name} chains but has no chain field"
+            assert descriptor.s_type, f"{name} chains but has no sType"
+
+
 def test_extras_do_not_call_unimplemented_functions():
     """Calling one of these aborts the process, so they must never be wrapped."""
     unimplemented = paths.unimplemented_functions()

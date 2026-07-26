@@ -116,6 +116,35 @@ def test_depth_write_enabled_accepts_a_bool(device):
     assert pipeline is not None
 
 
+def test_glsl_source_is_recognised_and_staged(device):
+    """GLSL says nowhere what stage it is; wgpu-py reads that off the label."""
+    module = device.create_shader_module(
+        label="a comp shader",
+        code="""
+        #version 450 core
+        layout(local_size_x = 1) in;
+        layout(std430, binding=0) buffer B { int out1[]; };
+        void main() { out1[gl_GlobalInvocationID.x] = 1; }
+        """,
+    )
+    assert module is not None
+
+
+def test_glsl_without_a_stage_in_the_label_says_so(device, wgpu):
+    with pytest.raises(ValueError, match="stage"):
+        device.create_shader_module(
+            label="mystery",
+            code="#version 450 core\nvoid main() {}",
+        )
+
+
+def test_wgsl_is_not_mistaken_for_glsl(device):
+    module = device.create_shader_module(
+        label="comp", code="@compute @workgroup_size(1) fn main() {}"
+    )
+    assert module is not None
+
+
 # -- names -------------------------------------------------------------------
 
 
@@ -424,6 +453,79 @@ def test_the_diagnostics_report_runs(wgpu):
 
     text = wgpu.diagnostics.get_report()
     assert "wgpu_native_info" in text
+
+
+# -- lifetimes ---------------------------------------------------------------
+
+
+def test_a_bundle_encoder_outlives_its_arguments(device):
+    """Dropping a pipeline before finish() used to abort the process.
+
+    A command encoder takes ownership straight away; a bundle encoder reads
+    its references again at finish(). wgpu-core panics on a released slot, and
+    a Rust panic cannot unwind through the FFI -- so this is a crash, not an
+    exception, and no test can catch it after the fact.
+    """
+    import gc
+
+    module = device.create_shader_module(
+        code="""
+        @vertex fn vs() -> @builtin(position) vec4<f32> {
+            return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        }
+        @fragment fn fs() -> @location(0) vec4<f32> {
+            return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+        }
+        """
+    )
+    pipeline = device.create_render_pipeline(
+        layout=device.create_pipeline_layout(bind_group_layouts=[]),
+        vertex={"module": module},
+        fragment={"module": module, "targets": [{"format": "rgba8unorm"}]},
+    )
+    encoder = device.create_render_bundle_encoder(color_formats=["rgba8unorm"])
+    encoder.set_pipeline(pipeline)
+    encoder.draw(3)
+    del pipeline
+    gc.collect()
+    assert encoder.finish() is not None
+
+
+def test_object_counts_follow_creation_and_release(wgpu, device):
+    import gc
+
+    def buffers():
+        return wgpu.diagnostics.object_counts.get_dict()["Buffer"]["count"]
+
+    before = buffers()
+    held = [device.create_buffer(size=16, usage="COPY_SRC") for _ in range(3)]
+    assert buffers() == before + 3
+    held.clear()
+    gc.collect()
+    assert buffers() == before
+
+
+def test_native_counts_cover_the_same_objects(wgpu, device):
+    """The two reports exist to be compared, so they must be comparable.
+
+    The counts themselves are not asserted against each other: wgpu-core
+    recycles slots and Python collects on its own schedule, so at any instant
+    either side can legitimately lead. What has to hold is that the names line
+    up, which is what makes a real divergence visible.
+    """
+    native = wgpu.diagnostics.wgpu_native_counts.get_dict()
+    python = wgpu.diagnostics.object_counts.get_dict()
+    shared = {"Buffer", "Texture", "RenderPipeline", "ShaderModule", "total"}
+    assert shared <= set(native)
+    assert shared <= set(python)
+
+
+def test_native_counts_survive_a_dropped_instance(wgpu):
+    """The report must not hold -- or dangle on -- an instance handle."""
+    import gc
+
+    gc.collect()
+    assert isinstance(wgpu.diagnostics.wgpu_native_counts.get_dict(), dict)
 
 
 # -- the hooks themselves ----------------------------------------------------

@@ -163,6 +163,21 @@ def texture_size(self):
 
 
 @property
+def texture_nbytes(self):
+    """The texture's size in bytes, at mip level 0.
+
+    What a staging buffer for a full-texture copy has to hold. The per-format
+    bit depths come from the same table the diagnostics use, which has a test
+    keeping it level with the format enum.
+    """
+    from wgpu._diagnostics import texture_format_to_bpp
+
+    bpp = texture_format_to_bpp.get(self.format, 0)
+    texels = self.width * self.height * self.depth_or_array_layers
+    return bpp * texels // 8
+
+
+@property
 def texture_view_texture(self):
     """The texture this view was created from.
 

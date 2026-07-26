@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import weakref
 from functools import lru_cache
 
 from .errors import ErrorSink
@@ -42,6 +43,7 @@ class Api:
             (name, m.py): m for name, ot in self.objects.items() for m in ot.methods
         }
 
+        self._instances = weakref.WeakSet()
         self.errors = ErrorSink()
         self._error_callbacks = self._build_error_callbacks()
         # Generated methods that build their descriptor inline call C directly,
@@ -128,7 +130,25 @@ class Api:
         # The instance's pump drives every downstream async op; child objects
         # inherit it as they are created.
         pump = lambda: self.lib.wgpuInstanceProcessEvents(handle)
-        return self.registry["instance"](handle, pump)
+        instance = self.registry["instance"](handle, pump)
+        # Remembered weakly, so process-wide questions -- wgpu-native's own
+        # object counts, for one -- have something to ask without an instance
+        # being created just to ask, and without this keeping one alive. The
+        # *objects* are held rather than their handles: a released instance
+        # clears its handle, where a cached raw pointer would dangle. All of
+        # them, because the most recently created is not necessarily the one
+        # still alive.
+        self._instances.add(instance)
+        return instance
+
+    @property
+    def instance_handle(self):
+        """A live instance's C handle, or ``None`` if there is not one."""
+        for instance in self._instances:
+            handle = instance._handle
+            if handle:
+                return handle
+        return None
 
 
 @lru_cache(maxsize=1)

@@ -209,8 +209,9 @@ which would abort the process rather than raise.
 
 ## Porting the historical suite
 
-In progress. **171 of 235 tests pass**, with no errors and no crashes -- from a
-suite that would not even collect.
+In progress. **214 of 233 tests pass**, with no errors and no crashes -- from a
+suite that would not even collect. `tests_mem` now collects and largely runs
+too, where before it could not be imported at all.
 
 It has earned its keep repeatedly, finding bugs nothing else did:
 
@@ -231,6 +232,28 @@ It has earned its keep repeatedly, finding bugs nothing else did:
   reached C as a zero-length binding; a falsy size means "the rest".
 * **Adapter info came back empty.** `out_string` members were never read, so
   `summary` reported `unknown | 6 | 3`.
+* **Every omitted string was sent as `""`.** webgpu.h defines a zeroed
+  `WGPUStringView` as the *empty string*; "not specified" is
+  `{NULL, WGPU_STRLEN}`. A pipeline with no explicit `entry_point` therefore
+  failed with "Unable to find entry point ''". Both the interpreted builder
+  and the compiled bodies now write the sentinel.
+* **Mapping a buffer read back stale bytes.** `queue.write_buffer`, and
+  unmapping a buffer created with `mapped_at_creation`, stage their data;
+  the staged copies only run on the next submit, which mapping does not
+  trigger. The classic backend did the same empty submit, citing
+  wgpu-native#305.
+* **A render bundle encoder did not keep its arguments alive.** It reads them
+  again at `finish()`, and wgpu-core panics on a released slot -- which aborts
+  the process rather than raising. `bindgen/tests` reproduces the abort.
+* **wgpu-native's log went nowhere.** naga explains *why* a shader failed
+  through the log while the error callback only says that it did, so the
+  useful half of every shader error was being discarded.
+* **`write_timestamp` always called the command-encoder function**, so passing
+  a pass encoder raised a ctype error; the statistics query set allocated the
+  wrong ctype outright. Neither had a test near it.
+* **A dead hook silently dropped a property.** `HAND_WRITTEN_ATTRS` named
+  `GPUTextureView.texture`, which the IDL does not declare, so it suppressed
+  nothing and the replacement was never attached. That is now a build error.
 
 Conveniences that had gone missing are back, all descriptor-driven rather than
 per-struct: positional struct values (`size=(64, 64, 1)`), every field spelling
@@ -243,21 +266,31 @@ Performance was re-measured after all of this: unchanged on the hot path, and
 `create_buffer` improved to 9.3 us because field-name normalisation only runs
 when a key does not already match.
 
+Object counts are now tracked so that `wgpu.diagnostics.object_counts` and
+`wgpu_native_counts` can be compared -- which is how a leaked handle is found.
+Counting costs about 3% on object creation, because it is a class-attribute
+load and one item store rather than a dict keyed by class name; the names are
+recovered by walking the class tree, which only the diagnostic does.
+
 ### Remaining failures, by file
 
-| file | failing | mostly |
+| file | failing | what they are |
 | --- | ---: | --- |
-| `test_wgpu_native_basics.py` | 14 | probes `_api` / `_helpers` / `lib_path` internals |
-| `test_wgpu_native_render.py` | 8 | depth/stencil validation details |
-| `test_set_override.py` | 8 | WGSL override plumbing |
-| `test_api.py` | 8 | classic construction and backend registration |
-| `test_wgpu_native_query_set.py` | 6 | query resolution |
-| `test_wgpu_native_buffer.py` | 5 | mapping edge cases |
-| others (9 files) | 15 | immediates, statistics, canvas, diagnostics |
+| `test_wgpu_native_basics.py` | 8 | probe `_api` / `_ffi` / `_helpers` / `_internal` |
+| `test_api.py` | 7 | classic construction, backend registration, `wgpu._classes` |
+| others (3 files) | 4 | `_mappings`, backend-qualified `repr`, API tracing |
 
-Roughly a third are tests probing classic internals that need porting rather
-than implementation changes; the rest are genuine gaps, now in narrow areas
-rather than spread across the API.
+What is left is now almost entirely tests reaching for classic internals that
+no longer exist -- they need porting, not implementation changes. The one real
+gap is API tracing, which is unimplemented and says so.
+
+Two behaviours were deliberately *not* matched. `repr` says
+`<wgpu.GPUDevice object 'x' at ...>` rather than naming
+`wgpu.backends.wgpu_native`: the classes really do live in `wgpu`, and a repr
+that names a module you cannot import them from is worse than a test that
+needs porting. And limits are reported hyphenated, as they always were, but
+`GPUObjectBase.__init__` takes the new argument list rather than the classic
+one.
 
 ## Packaging
 
@@ -286,10 +319,19 @@ the check that keeps "fully generated" true rather than aspirational.
 
 ## What is left
 
-1. Finish the suite port (above).
-2. Push constants and the diagnostics subsystem.
-3. Descriptors that still marshal at runtime (arrays and nested structs) could
+1. Port the ~19 remaining tests that reach for deleted internals.
+2. Push constants, and API tracing.
+3. `tests_mem` collects and runs, but aggressive release ordering still aborts
+   the process in some combinations -- a real lifetime bug, not a test artefact.
+4. Descriptors that still marshal at runtime (arrays and nested structs) could
    use the same compiled bodies as the flat ones.
+
+wgpu-native's own extension structs (`WGPUShaderSourceGLSL` and the `*Extras`
+family) are declared only in `wgpu.h`, so they cannot come from `webgpu.json`.
+They are written out in `wgpu/backends/wgpu_native/native_structs.py` as the
+same descriptors the generator emits -- so the marshalling stays generic and
+only the shape is hand-written -- and pinned against the compiled header.
+Teaching the generator to read them out of `wgpu.h` would remove even that.
 
 ## Acceptance gate
 

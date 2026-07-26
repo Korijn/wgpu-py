@@ -8,6 +8,7 @@ that could be derived is being written by hand instead.
 
 from __future__ import annotations
 
+from wgpu._api.base import GPUObjectBase
 from wgpu._coreutils import logger
 from wgpu._native import ffi as _ffi
 
@@ -187,13 +188,22 @@ def _check_range(buffer, offset, size):
     return offset, size
 
 
+#: A read map that skips the flush below, for callers that have already
+#: submitted and know there is nothing outstanding. Not part of WebGPU;
+#: rendercanvas uses it on its present path, where the extra submit per frame
+#: is pure cost.
+_READ_NOSYNC = "READ_NOSYNC"
+
+
 def buffer_map_async(self, mode, offset=0, size=None):
     """Map the buffer for reading or writing, asynchronously."""
     if self._map_status[2]:
         raise RuntimeError("Buffer is already mapped.")
+    sync = mode != _READ_NOSYNC
     mode = _map_mode(mode)
     offset, size = _check_range(self, offset, size)
-    _flush_queue_writes(self)
+    if sync:
+        _flush_queue_writes(self)
     promise = self._call("map_async", mode, offset, size)
     self._map_status = (offset, offset + size, mode)
     return promise
@@ -207,10 +217,12 @@ def _flush_queue_writes(buffer):
     it through; the staged copies only run on the next queue submit. Mapping
     does not trigger one, so without this a read-back sees whatever was in the
     buffer before -- silently, and with plausible-looking stale bytes.
+    See https://github.com/gfx-rs/wgpu-native/issues/305.
 
     By the spec, mapping observes everything already ordered on the queue, so
     an empty submit is what makes that true here. It costs one C call, on an
-    operation that is already asynchronous and expensive.
+    operation that is already asynchronous and expensive -- and ``READ_NOSYNC``
+    opts out for callers that have just submitted themselves.
     """
     device = buffer._device
     if device is not None:
@@ -220,6 +232,8 @@ def _flush_queue_writes(buffer):
 def _map_mode(mode):
     from wgpu._generated import apiflags
 
+    if mode == _READ_NOSYNC:
+        return apiflags.MapMode.READ
     value = apiflags.TO_INT["map_mode"][mode]
     if value not in (apiflags.MapMode.READ, apiflags.MapMode.WRITE):
         raise ValueError(f"Invalid map mode: {mode!r}")
@@ -359,6 +373,86 @@ def check_clear_range(generated_clear_buffer):
         return generated_clear_buffer(self, buffer, offset, size)
 
     return clear_buffer
+
+
+def device_poll(self, wait=False):
+    """Run wgpu-native's pending work for this device.
+
+    Not part of WebGPU, where the browser's event loop does this. It is the
+    hook that lets a test (or a render loop that owns its own loop) push
+    completion callbacks along without awaiting anything in particular.
+    """
+    from wgpu._native import ffi, lib
+
+    lib.wgpuDevicePoll(self._handle, bool(wait), ffi.NULL)
+
+
+def device_poll_wait(self):
+    """Block until wgpu-native has finished this device's pending work."""
+    device_poll(self, wait=True)
+
+
+def retain_arguments(method):
+    """Wrap a recording method so the objects it is given outlive the call.
+
+    A command encoder takes ownership of what it records straight away, but a
+    *bundle* encoder only reads its references again at ``finish()``. Drop the
+    last Python reference to a pipeline in between and wgpu-core panics on a
+    slot that no longer exists -- and a Rust panic cannot unwind through the
+    FFI, so it takes the process with it rather than raising.
+
+    Every object argument is retained rather than a listed few: which ones
+    matter is a property of wgpu-core's internals, and guessing wrong here is
+    a crash, while retaining one object too many until ``finish()`` is not.
+    """
+    import functools
+
+    @functools.wraps(method)
+    def recorded(self, *args, **kwargs):
+        retained = self._retained
+        if retained is None:
+            retained = self._retained = set()
+        for value in (*args, *kwargs.values()):
+            if isinstance(value, GPUObjectBase):
+                retained.add(value)
+        return method(self, *args, **kwargs)
+
+    return recorded
+
+
+def release_arguments(finish):
+    """Wrap ``finish`` so the retained objects are let go once it has run."""
+    import functools
+
+    @functools.wraps(finish)
+    def wrapper(self, **kwargs):
+        try:
+            return finish(self, **kwargs)
+        finally:
+            self._retained = None
+
+    return wrapper
+
+
+def retain_on(cls) -> None:
+    """Apply :func:`retain_arguments` to everything ``cls`` records.
+
+    Every public method is wrapped rather than a hand-kept list: one that
+    takes no objects simply retains nothing, so the wrapping cannot be wrong
+    in the direction that crashes.
+    """
+    for name, value in list(vars(cls).items()):
+        if name.startswith("_") or not callable(value):
+            continue
+        if name == "finish":
+            setattr(cls, name, release_arguments(value))
+        else:
+            setattr(cls, name, retain_arguments(value))
+    for base in cls.__mro__[1:]:
+        for name, value in list(vars(base).items()):
+            if name.startswith("_") or not callable(value) or name in vars(cls):
+                continue
+            setattr(cls, name, retain_arguments(value))
 
 
 #: wgpu-native requires a texture-to-buffer copy's rows to be 256-byte aligned.
