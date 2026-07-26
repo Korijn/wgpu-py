@@ -11,6 +11,7 @@ read off in one place instead of being hunted through a 4000-line backend.
 """
 
 from wgpu._api import extras as _x
+from wgpu._api import overrides as _ov
 from wgpu._api.canvas import GPUCanvasContext
 from wgpu._api.gpu import GPU
 from wgpu._api.info import (
@@ -42,6 +43,7 @@ from wgpu._runtime.errors import (
 
 # -- wgpu-py additions to the WebGPU API -------------------------------------
 
+GPUDevice.create_buffer = _ov.track_mapped_at_creation(GPUDevice.create_buffer)
 GPUBuffer.read_mapped = _x.buffer_read_mapped
 GPUBuffer.write_mapped = _x.buffer_write_mapped
 GPUDevice.create_buffer_with_data = _x.device_create_buffer_with_data

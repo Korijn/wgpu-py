@@ -50,6 +50,10 @@ class GPUObjectBase(Mixin):
         "_uncaptured_error_handler",
         "_binding_view_dimension",
         "_cache",
+        # A buffer's mapped range: (start, end, mode). wgpu-native does not
+        # implement the getter, and the range has to be validated in Python
+        # anyway, since passing a bad one to C aborts the process.
+        "_map_status",
     )
 
     _spec_name = ""
@@ -65,6 +69,7 @@ class GPUObjectBase(Mixin):
         self._uncaptured_error_handler = None
         self._binding_view_dimension = None
         self._cache = {}
+        self._map_status = (0, 0, 0)
 
     # -- identity ----------------------------------------------------------
 

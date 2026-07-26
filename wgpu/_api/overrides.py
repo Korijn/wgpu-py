@@ -71,12 +71,6 @@ def device_adapter_info(self):
 
 
 @property
-def buffer_map_state(self):
-    """Whether the buffer is 'unmapped', 'pending' or 'mapped'."""
-    return self._get("get_map_state")
-
-
-@property
 def texture_view_texture(self):
     """The texture this view was created from."""
     return self._parent
@@ -196,20 +190,56 @@ def binding_commands_set_immediates(self, range_offset, data, data_offset=0, dat
 
 # -- buffer mapping ----------------------------------------------------------
 #
-# The spec says an omitted ``size`` means "to the end of the buffer". C has a
-# whole-size sentinel for this, but wgpu-native rejects it for mapping, so the
-# size is resolved here, where the buffer's size is known.
+# The mapped range is tracked here rather than asked of wgpu-native: it does not
+# implement wgpuBufferGetMapState, and every offset and size has to be checked
+# in Python regardless, because handing C an invalid range aborts the process
+# instead of raising.
+
+_UNMAPPED, _PENDING, _MAPPED = "unmapped", "pending", "mapped"
 
 
-def _map_range(buffer, offset, size):
+def _check_range(buffer, offset, size):
+    """Resolve and validate a range against the buffer's mapped region."""
+    start, end, mode = buffer._map_status
+    if offset is None:
+        offset = start if mode else 0
+    else:
+        offset = int(offset)
     if size is None:
-        size = buffer.size - offset
-    return int(offset), int(size)
+        size = (end - offset) if mode else (buffer.size - offset)
+    else:
+        size = int(size)
+    if offset < 0:
+        raise ValueError("Mapped offset must not be smaller than zero.")
+    if offset % 8:
+        raise ValueError("Mapped offset must be a multiple of 8.")
+    if size < 1:
+        raise ValueError("Mapped size must be larger than zero.")
+    if size % 4:
+        raise ValueError("Mapped size must be a multiple of 4.")
+    if offset + size > buffer.size:
+        raise ValueError("Mapped range must not extend beyond total buffer size.")
+    return offset, size
 
 
 def buffer_map_async(self, mode, offset=0, size=None):
     """Map the buffer for reading or writing, asynchronously."""
-    return self._call("map_async", mode, *_map_range(self, offset, size))
+    if self._map_status[2]:
+        raise RuntimeError("Buffer is already mapped.")
+    mode = _map_mode(mode)
+    offset, size = _check_range(self, offset, size)
+    promise = self._call("map_async", mode, offset, size)
+    self._map_status = (offset, offset + size, mode)
+    return promise
+
+
+def _map_mode(mode):
+    from wgpu._generated import apiflags
+
+    value = apiflags.TO_INT["map_mode"][mode]
+    if value not in (apiflags.MapMode.READ, apiflags.MapMode.WRITE):
+        raise ValueError(f"Invalid map mode: {mode!r}")
+    return value
 
 
 def buffer_map_sync(self, mode, offset=0, size=None):
@@ -220,9 +250,44 @@ def buffer_map_sync(self, mode, offset=0, size=None):
 buffer_map = deprecated_sync_or_async("map")
 
 
+def buffer_unmap(self):
+    """Unmap the buffer, invalidating any views onto its mapped range."""
+    if not self._map_status[2]:
+        raise RuntimeError("Cannot unmap a buffer that is not mapped.")
+    self._map_status = (0, 0, 0)
+    return self._call("unmap")
+
+
 def buffer_get_mapped_range(self, offset=0, size=None):
     """A memoryview onto the mapped range. Invalid once the buffer is unmapped."""
-    return self._call("get_mapped_range", *_map_range(self, offset, size))
+    offset, size = _check_range(self, offset, size)
+    return self._call("get_mapped_range", offset, size)
+
+
+@property
+def buffer_map_state(self):
+    """Whether the buffer is 'unmapped', 'pending' or 'mapped'."""
+    return _MAPPED if self._map_status[2] else _UNMAPPED
+
+
+def check_mapped_for(buffer, direction, offset, size):
+    """Validate a read/write against the buffer's currently mapped range."""
+    from wgpu._generated import apiflags
+
+    start, end, mode = buffer._map_status
+    wanted = apiflags.MapMode.READ if direction == "read" else apiflags.MapMode.WRITE
+    if not mode:
+        raise RuntimeError(f"Can only {direction} a buffer while it is mapped.")
+    if not mode & wanted:
+        raise RuntimeError(
+            f"Can only {direction} a buffer mapped in {direction} mode."
+        )
+    offset, size = _check_range(buffer, offset, size)
+    if offset < start or (offset + size) > end:
+        raise ValueError(
+            "The range is not contained in the currently mapped range."
+        )
+    return offset, size
 
 
 # -- shader compilation info -------------------------------------------------
@@ -248,3 +313,23 @@ def shader_module_get_compilation_info_sync(self):
 shader_module_get_compilation_info = deprecated_sync_or_async(
     "get_compilation_info"
 )
+
+
+def track_mapped_at_creation(generated_create_buffer):
+    """Wrap ``create_buffer`` so ``mapped_at_creation`` records the range.
+
+    A buffer created mapped is mapped for writing over its whole length, and
+    the tracked range is what read_mapped/write_mapped/unmap validate against.
+    """
+    import functools
+
+    @functools.wraps(generated_create_buffer)
+    def create_buffer(self, **kwargs):
+        buffer = generated_create_buffer(self, **kwargs)
+        if kwargs.get("mapped_at_creation"):
+            from wgpu._generated import apiflags
+
+            buffer._map_status = (0, buffer.size, apiflags.MapMode.WRITE)
+        return buffer
+
+    return create_buffer

@@ -26,7 +26,6 @@ _WHOLE64 = 18446744073709551615
 _E_error_filter = enums.TO_INT['error_filter']
 _E_index_format = enums.TO_INT['index_format']
 _c_wgpuBufferDestroy = _lib.wgpuBufferDestroy
-_c_wgpuBufferUnmap = _lib.wgpuBufferUnmap
 _c_wgpuCommandEncoderClearBuffer = _lib.wgpuCommandEncoderClearBuffer
 _c_wgpuCommandEncoderCopyBufferToBuffer = _lib.wgpuCommandEncoderCopyBufferToBuffer
 _c_wgpuCommandEncoderPopDebugGroup = _lib.wgpuCommandEncoderPopDebugGroup
@@ -159,9 +158,7 @@ class GPUBuffer(GPUObjectBase):
 
     get_mapped_range = _ov.buffer_get_mapped_range
 
-    def unmap(self) -> None:
-        """GPUBuffer.unmap -- see the WebGPU specification."""
-        return _c_wgpuBufferUnmap(self._handle)
+    unmap = _ov.buffer_unmap
 
     def destroy(self) -> None:
         """GPUBuffer.destroy -- see the WebGPU specification."""

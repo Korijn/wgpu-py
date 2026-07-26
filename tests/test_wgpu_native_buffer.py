@@ -539,13 +539,13 @@ def test_create_buffer_with_data(size):
     buffer = device.create_buffer_with_data(data=data, usage=wgpu.BufferUsage.COPY_SRC)
 
     # Make sure that the length of the buffer is the next multiple of 4
-    assert buffer._nbytes % 4 == 0
-    assert 0 <= buffer._nbytes - size <= 3
+    assert buffer.size % 4 == 0
+    assert 0 <= buffer.size - size <= 3
 
     # Make sure that the contents of the buffer is the data padded with 0s.
     copy = device.queue.read_buffer(buffer)
     assert copy[0:size] == data
-    assert copy[size:] == bytes(buffer._nbytes - size)
+    assert copy[size:] == bytes(buffer.size - size)
 
 
 @pytest.mark.skip

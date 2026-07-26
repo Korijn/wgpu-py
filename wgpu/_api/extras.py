@@ -18,19 +18,23 @@ def buffer_read_mapped(self, buffer_offset=None, size=None, *, copy=True):
     stays valid after ``unmap()``. With ``copy=False`` you get a memoryview onto
     the mapped memory, which is faster but becomes invalid once unmapped.
     """
-    offset = 0 if buffer_offset is None else int(buffer_offset)
-    if size is None:
-        size = self.size - offset
+    from wgpu._api.overrides import check_mapped_for
+
+    offset, size = check_mapped_for(self, "read", buffer_offset, size)
     view = self.get_mapped_range(offset, size)
     return bytearray(view) if copy else view
 
 
 def buffer_write_mapped(self, data, buffer_offset=None):
     """Write into a mapped buffer."""
-    offset = 0 if buffer_offset is None else int(buffer_offset)
+    from wgpu._api.overrides import check_mapped_for
+
     src = memoryview(data).cast("B")
-    dst = self.get_mapped_range(offset, src.nbytes)
-    dst[:] = src
+    # The mapped range must be 4-aligned even when the data is not; the extra
+    # bytes are simply not written.
+    size = (src.nbytes + 3) & ~3
+    offset, size = check_mapped_for(self, "write", buffer_offset, size)
+    self.get_mapped_range(offset, size)[: src.nbytes] = src
 
 
 # -- GPUDevice ---------------------------------------------------------------
@@ -49,7 +53,7 @@ def device_create_buffer_with_data(self, *, label="", data, usage):
     buffer = self.create_buffer(
         label=label, size=size, usage=usage, mapped_at_creation=True
     )
-    buffer.get_mapped_range(0, size)[: src.nbytes] = src
+    buffer.write_mapped(src)
     buffer.unmap()
     return buffer
 

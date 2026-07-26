@@ -388,6 +388,7 @@ HAND_WRITTEN = {
     # value only the Python side knows -- wgpu-native rejects the C sentinel.
     ("GPUBuffer", "mapAsync"),
     ("GPUBuffer", "getMappedRange"),
+    ("GPUBuffer", "unmap"),
     # wgpu-native does not implement the C function, but wgpu-py has always
     # answered this rather than failing; see the override.
     ("GPUShaderModule", "getCompilationInfo"),
