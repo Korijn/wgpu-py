@@ -121,37 +121,52 @@ structural -- stop making one Python call per GPU command:
 
 ## Porting the historical suite
 
-In progress. The suite now collects and runs against the generated
-implementation; **72 tests pass**, 121 fail, 21 error, and 2 files still crash.
+In progress. **153 of 235 tests pass**, with no errors and no crashes -- from a
+suite that would not even collect.
 
-It has already earned its keep twice, by finding bugs nothing else did:
+It has earned its keep repeatedly, finding bugs nothing else did:
 
 * **`await buffer.map_async()` hung forever.** wgpu-native only runs completion
   callbacks while its event queue is processed, and only `sync_wait()` drove
-  that. Fixed: the awaiting task pumps between naps.
+  that. The awaiting task now pumps between naps.
 * **35 C functions abort the process.** wgpu-native declares the full WebGPU
   surface but leaves 35 functions `unimplemented!()`, and a Rust panic cannot
-  unwind across FFI. Four test files died outright. Fixed: the generator reads
+  unwind across FFI. Four test files died outright. The generator now reads
   wgpu-native's own `unimplemented.rs` and emits a guard.
+* **Invalid buffer ranges aborted rather than raising.** The mapped range is
+  now tracked in Python and every offset and size validated before it reaches
+  C -- which is also how `map_state` is answered, since the C getter is one of
+  the unimplemented ones.
+* **Omitted nested structs lost their defaults.** An omitted multisample state
+  reached wgpu-native with `count: 0`. The IDL distinguishes exactly which
+  nested structs default to `{}`, and that now rides in the descriptor.
+* **A zero size aborted the process.** `set_vertex_buffer(slot, buf, 0, 0)`
+  reached C as a zero-length binding; a falsy size means "the rest", as it
+  always has in wgpu-py.
 
-### Remaining failure clusters
+Several long-standing conveniences were missing and are now supported
+generically, driven by the descriptors rather than per-struct code: positional
+struct values (`size=(64, 64, 1)`), hyphenated field names, mappings for
+key/value arrays (pipeline constants), and underscored enum spellings.
 
-Grouped by cause, largest first -- most are one fix covering many tests:
+### Remaining failures, by file
 
-1. **Tests probing classic internals** (~14): `wgpu.backends.wgpu_native._api`,
-   `._helpers`, `.lib_path`, `.__version__`. `lib_path` is meaningless now the
-   library is statically linked; `__version__` should be exposed. These tests
-   need porting, not the implementation fixing.
-2. **Native-only feature names** (~10): `vertex-writable-storage` and friends
-   are wgpu-native extras absent from the W3C IDL, so `FeatureName` rejects
-   them. The enum map needs wgpu-native's additions.
-3. **SPIR-V shader source** (~4): `create_shader_module(code=<bytes>)` needs the
-   `WGPUShaderSourceSPIRV` path, which takes a word count and a `uint32` array
-   rather than a string.
-4. **Crashing files** (2): `test_wgpu_native_buffer.py`,
-   `test_wgpu_occlusion_query.py` -- not yet diagnosed.
-5. Assorted single failures: limit-validation error types, canvas context
-   details, diagnostics table contents.
+| file | failing |
+| --- | ---: |
+| `test_wgpu_native_basics.py` | 18 |
+| `test_wgpu_native_render.py` | 8 |
+| `test_set_override.py` | 8 |
+| `test_api.py` | 8 |
+| `test_util_default_device.py` | 7 |
+| `test_wgpu_native_query_set.py` | 6 |
+| `test_wgpu_native_errors.py` | 6 |
+| `test_wgpu_native_buffer.py` | 5 |
+| others (9 files) | 16 |
+
+Roughly a third are tests probing classic internals (`_api`, `_helpers`,
+`lib_path`, `_nbytes`) that need porting rather than implementation changes.
+The rest are genuine gaps: error scopes (`push_error_scope`/`pop_error_scope`),
+SPIR-V shader source, immediates, query-set details, and the canvas context.
 
 ## What is left
 
