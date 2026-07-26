@@ -7,6 +7,7 @@ entirely, so the behaviour it used to provide -- labels, defaults, enum
 validation, error timing -- is asserted here rather than assumed.
 """
 
+import re
 import sys
 
 import pytest
@@ -63,6 +64,52 @@ def test_defaults_match_the_interpreted_builder(device):
     # would complain, so a clean create is the assertion.
     assert device.create_sampler().__class__.__name__ == "GPUSampler"
     assert device.create_query_set(type="occlusion", count=4).count == 4
+
+
+def test_required_members_are_rejected_when_explicitly_none(device):
+    """``size=None`` must raise, not build a zero-sized buffer.
+
+    Omitting a required field is caught by the keyword signature, which gives
+    it no default. Passing ``None`` explicitly is not: it means "unspecified",
+    and unspecified plus no default is exactly what ``required`` forbids. The
+    compiled bodies used to fall through that case and send C a zero, which
+    wgpu-native reads as a real value -- a silent divergence from the
+    interpreted builder, which has raised here since it learned ``required``.
+    """
+    from wgpu._runtime.errors import InvalidValueError
+
+    with pytest.raises(InvalidValueError, match="'size' is required"):
+        device.create_buffer(size=None, usage="COPY_DST")
+    with pytest.raises(InvalidValueError, match="'usage' is required"):
+        device.create_buffer(size=8, usage=None)
+
+
+def test_every_compiled_required_member_has_a_guard(source):
+    """The rule above, checked against the descriptors rather than by example.
+
+    Any future struct that gains a required member gets the guard for free;
+    this fails if the emitter ever stops writing one, without needing a
+    sample value for every other member of that struct.
+    """
+    from wgpu._generated.structs import STRUCTS
+
+    by_c_name = {d.c_name: d for d in STRUCTS.values()}
+    checked = 0
+    for chunk in source.split("\n    def ")[1:]:
+        match = re.search(r'_ffi\.new\("(\w+) \*"\)', chunk)
+        if match is None:
+            continue  # not a compiled descriptor body
+        desc = by_c_name.get(match.group(1))
+        if desc is None:
+            continue
+        for mem in desc.members:
+            if not mem.required or mem.default is not None:
+                continue
+            assert "raise InvalidValueError" in chunk and mem.py in chunk, (
+                f"{chunk.split('(')[0]}: required member {mem.py!r} has no guard"
+            )
+            checked += 1
+    assert checked, "no compiled body has a required member -- test proves nothing"
 
 
 def test_enum_values_are_still_validated(device):

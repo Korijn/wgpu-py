@@ -4,9 +4,8 @@ Can the generated implementation replace the classic one? This is the measured
 status, so the decision to delete the old code stays evidence-based.
 
 **The public API is now generated end to end, it performs, and the historical
-suites pass.** `tests/` is 232 passed / 1 skipped and `tests_mem` is 38 passed
-/ 4 skipped, against one file that still needs a decision rather than a port
-(the polling thread -- see "What is left").
+suites pass.** `tests/` is 238 passed / 1 skipped with nothing excluded,
+`tests_mem` is 38 passed / 4 skipped, and `bindgen/tests` is 124 passed.
 
 ## How it is built
 
@@ -88,7 +87,7 @@ differs. Best of three runs each (`python -m bindgen.tests.benchmark`).
 | create_buffer | 9.65 us | **3.72 us** | **2.6x faster** |
 | dispatch_workgroups | 1.37 us | **0.68 us** | **2.0x faster** |
 | record_pass | 65.2 us | **53.9 us** | **1.2x faster** |
-| create_bind_group_layout | 19.6 us | 20.6 us | 1.05x slower |
+| create_bind_group_layout | 19.6 us | **15.7 us** | **1.25x faster** |
 | write_buffer | 6.46 us | 8.93 us | 1.38x slower |
 | property reads | 0.083 us | 0.162 us | 1.94x slower |
 
@@ -96,9 +95,11 @@ The hot path -- the calls a frame makes thousands of times -- is where the win
 is. Startup is 12x because the library is statically linked: no download, no
 runtime version probe, far less import work.
 
-`create_bind_group_layout` is the one remaining case that still marshals a
-descriptor at runtime, because it takes an array of structs; the technique that
-fixed `create_buffer` would apply to it too.
+`create_bind_group_layout` was the one case still slower than classic, because
+it takes an array of structs and so marshals its descriptor at runtime. It is
+now the *interpreted* path that got faster -- see "What the interpreted builder
+was redoing" below -- which is why it is the one row measured on a later run
+than the rest of the table.
 
 ### How the hot path got there
 
@@ -143,9 +144,40 @@ immediately. That keeps `finish()` and `submit()` as the boundaries the
 genuinely deferred errors surface at, which the rest of the API relies on.
 
 The cases still slower than classic are cold or mid paths that run once per
-resource rather than once per draw: the descriptors that still marshal at
-runtime because they contain arrays or nested structs, and cached property
-reads (a dict lookup rather than a plain attribute, 0.08 us each).
+resource rather than once per draw: `write_buffer`, and cached property reads
+(a dict lookup rather than a plain attribute, 0.08 us each).
+
+### What the interpreted builder was redoing
+
+Compiled bodies only cover structs that are flat. The descriptors that still
+marshal at runtime are the ones with arrays and nested structs -- and those are
+exactly the ones that marshal *most*, because a nested struct is filled once per
+array element per call. `create_bind_group_layout` with two entries did five
+struct fills, and each one rebuilt work that depends only on the descriptor:
+
+* the set of known field names, rebuilt per fill to check for unknown keys;
+* the default for every member, re-resolved through an `isinstance` chain --
+  36 calls for one `create_bind_group_layout`;
+* the dispatch on `mem.kind`, walked as an if/elif chain per member;
+* `from wgpu._api import adapt`, executed *inside* the fill loop, so twice per
+  call here and once per element for any adapted struct.
+
+None of it varies with the values, so it is now resolved once per struct and
+cached (`StructBuilder._plan`). That took `create_bind_group_layout` from 19.3
+to 15.7 us -- past classic rather than just level with it -- and it speeds up
+every descriptor at every nesting depth, including the ones a compiled body can
+never cover: callbacks, chained extension structs, and shape adapters.
+
+The obvious next step -- generating straight-line code through arrays and
+nested structs as well -- was deliberately **not** taken. At the top level the
+flattened keyword signature makes every field statically known, which is what
+makes a compiled body safe. One level down the value is a runtime mapping, so
+generated code would have to re-implement positional sequences, key
+normalisation, unknown-key rejection, required-member checks and dict-valued
+defaults. That is a second copy of `_fill` in emitted source, and the risk is
+not hypothetical: the far simpler flat compiler had already drifted from the
+interpreted builder on required members (see below). Faster *and* one
+implementation of the semantics beats slightly faster and two.
 
 Note that creating and dropping GPU objects in a loop gets steadily slower in
 **both** implementations -- the cost is inside wgpu-native's resource
@@ -210,7 +242,7 @@ which would abort the process rather than raise.
 
 ## Porting the historical suite
 
-Done. **`tests/` passes in full** -- 237 passed, 1 skipped, no errors, no
+Done. **`tests/` passes in full** -- 238 passed, 1 skipped, no errors, no
 crashes and nothing excluded -- from a suite that would not even collect.
 **`tests_mem` passes in full** too (38 passed, 4 skipped for a missing GUI
 toolkit or an unimplemented object), where before it could not be imported at
@@ -280,6 +312,16 @@ It has earned its keep repeatedly, finding bugs nothing else did:
 * **A dead hook silently dropped a property.** `HAND_WRITTEN_ATTRS` named
   `GPUTextureView.texture`, which the IDL does not declare, so it suppressed
   nothing and the replacement was never attached. That is now a build error.
+* **The compiled bodies never learned `required`.** When the interpreted
+  builder was taught that an omitted required member must raise rather than go
+  out as a zero, the straight-line bodies were not, so
+  `create_buffer(size=None, usage=...)` returned a *zero-sized buffer* while
+  the interpreted path raised for the same input. Omitting the argument was
+  always caught -- the keyword signature gives a required field no default --
+  which is why nothing noticed; passing `None` explicitly means "unspecified"
+  and fell straight through. Both paths now raise, and a test walks the
+  descriptors rather than the examples, so a struct that gains a required
+  member is covered without anyone remembering to add a case.
 
 Conveniences that had gone missing are back, all descriptor-driven rather than
 per-struct: positional struct values (`size=(64, 64, 1)`), every field spelling
@@ -389,9 +431,28 @@ the check that keeps "fully generated" true rather than aspirational.
 
 ## What is left
 
-1. Push constants.
-2. Descriptors that still marshal at runtime (arrays and nested structs) could
-   use the same compiled bodies as the flat ones.
+Both of the items that used to stand here are settled, one of them by finding
+that it had already answered itself:
+
+* **Push constants** are gone from wgpu-native. The feature was renamed to the
+  standard WebGPU **immediates**, so it arrives through the IDL like anything
+  else and was generated all along: `setImmediates` on all three encoders,
+  `immediateSize` on the pipeline layout, `maxImmediateSize` in the limits, and
+  the `immediates` native feature. Verified end to end on lavapipe -- the
+  ported historical tests already covered the render pass and the render
+  bundle, and a compute-stage test was added for the third encoder, which
+  nothing reached. Nothing to implement; the entry was stale.
+* **Descriptors that marshal at runtime** are now materially faster, but by
+  making the interpreted builder stop redoing per-descriptor work rather than
+  by generating more source. The reasoning, and why the generator route was
+  rejected, is under "What the interpreted builder was redoing" above.
+
+What remains is genuinely open rather than deferred:
+
+1. `write_buffer` (1.38x slower than classic) and cached property reads
+   (1.94x) are the last cases behind the old implementation.
+2. The structural wins are still the ones listed under "What would push it
+   further": render bundles, `multi_draw_indirect`, batched setters.
 
 wgpu-native's own extension structs (`WGPUShaderSourceGLSL` and the `*Extras`
 family) are declared only in `wgpu.h`, so they cannot come from `webgpu.json`.

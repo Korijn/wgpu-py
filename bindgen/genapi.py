@@ -619,15 +619,19 @@ def _emit_bindings(binds: set) -> list[str]:
     lines = [
         "# Bound once at import so the hot methods below are a single C call.",
         "from wgpu._native import ffi as _ffi, lib as _lib",
-        "",
     ]
     kinds = {kind for kind, _ in binds}
-    if "null" in kinds or "handle" in kinds:
-        lines.append("_NULL = _ffi.NULL")
+    # Imports before any assignment, so the block reads as a normal module
+    # header rather than tripping "import not at top of file".
     if "errors" in kinds:
         lines.append("from wgpu._api.base import raise_if_error as _raise_if_error")
     if "strlen" in kinds:
         lines.append("from wgpu._generated.constants import strlen as _STRLEN")
+    if "required" in kinds:
+        lines.append("from wgpu._runtime.errors import InvalidValueError")
+    lines.append("")
+    if "null" in kinds or "handle" in kinds:
+        lines.append("_NULL = _ffi.NULL")
     if "handle" in kinds:
         lines.append("")
         lines.append("def _handle(obj):")
@@ -1150,6 +1154,18 @@ def _compiled_descriptor_body(b, spec_object, spec_method, idl_struct, binds, na
         if fallback is not None:
             lines.append("else:")
             lines.append(f"    _d.{mem.c} = {fallback}")
+        elif mem.required:
+            # The IDL says there has to be a value and there is no default to
+            # fall back on. Left alone the member would go out as a zero, which
+            # wgpu-native reads as a real value -- a zero-sized buffer. The
+            # keyword signature already rejects *omitting* it; this is the
+            # explicit ``size=None``, which the interpreted builder rejects too.
+            binds.add(("required", None))
+            lines.append("else:")
+            lines.append(
+                f"    raise InvalidValueError("
+                f"{desc.c_name + ': ' + repr(mem.py) + ' is required'!r})"
+            )
 
     c_func = naming.c_method_func(spec_object, spec_method["name"])
     binds.add(("func", c_func))

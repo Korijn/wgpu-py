@@ -38,6 +38,8 @@ class StructBuilder:
         # Public value maps: strings in, C integers out (and back again).
         self.enums = enums
         self.flags = flags
+        # Per-descriptor work that does not depend on the values, done once.
+        self._plans: dict = {}
 
     # -- public ------------------------------------------------------------
 
@@ -105,6 +107,52 @@ class StructBuilder:
         self._fill(ptr, desc, mapping, keep)
         return ptr
 
+    def _plan(self, desc):
+        """Everything about ``desc`` that does not depend on the values.
+
+        ``_fill`` used to redo all of this on every call: rebuild the set of
+        known field names, walk the ``isinstance`` chain in ``_default`` for
+        every member, and dispatch on ``mem.kind`` through an if/elif chain.
+        None of it varies with the mapping being marshalled, so it is resolved
+        once per struct and reused -- which matters because the descriptors
+        that still marshal at runtime are the *nested* ones, filled once per
+        array element per call.
+        """
+        plan = self._plans.get(desc.c_name)
+        if plan is None:
+            setters = {
+                "enum": self._set_enum,
+                "bitflag": self._set_bitflag,
+                "prim": self._set_prim,
+                "string": self._set_string_member,
+                "object": self._set_object,
+                "struct": self._set_struct,
+                "callback": self._set_callback,
+            }
+            steps = []
+            for mem in desc.members:
+                if mem.array:
+                    setter = self._set_array
+                elif mem.kind in ("c_void", "out_string"):
+                    setter = None  # never built from an input mapping
+                else:
+                    setter = setters.get(mem.kind)
+                    if setter is None:
+                        raise TypeError(
+                            f"cannot marshal member kind {mem.kind!r} ({mem.c})"
+                        )
+                steps.append((mem, self._default(mem), setter))
+            steps = tuple(steps)
+            reshape = None
+            if desc.adapters:
+                # Resolved here rather than in the loop: this used to be an
+                # ``import`` statement executed on every fill of every adapted
+                # struct, which for an array is once per element per call.
+                from wgpu._api.adapt import reshape
+            plan = (frozenset(m.py for m in desc.members), steps, reshape)
+            self._plans[desc.c_name] = plan
+        return plan
+
     def _fill(self, ptr, desc, mapping, keep: list):
         if not hasattr(mapping, "keys"):
             # The spec lets the small geometric structs be written positionally
@@ -117,14 +165,12 @@ class StructBuilder:
                     f"{len(desc.members)} fields"
                 )
             mapping = {m.py: v for m, v in zip(desc.members, values)}
-        if desc.adapters:
-            from wgpu._api import adapt
-
-            mapping = adapt.reshape(self, desc, mapping, keep)
+        known, steps, reshape = self._plan(desc)
+        if reshape is not None:
+            mapping = reshape(self, desc, mapping, keep)
         chain = mapping.pop("_chain", None) if "_chain" in mapping else None
         if chain is not None:
             self._chain(ptr, chain, keep)
-        known = {m.py for m in desc.members}
         unknown = set(mapping) - known
         if unknown:
             # The same field is spelled three ways across the specs and the
@@ -141,14 +187,13 @@ class StructBuilder:
             raise InvalidValueError(
                 f"{desc.c_name}: unexpected fields {sorted(unknown)}"
             )
-        for mem in desc.members:
-            value = mapping.get(mem.py, _MISSING)
-            if value is None:
-                # An explicit None means "not specified", exactly like omitting
-                # the field -- which is what ``undefined`` means on the web.
-                value = _MISSING
-            if value is _MISSING:
-                value = self._default(mem)
+        get = mapping.get
+        for mem, default, setter in steps:
+            value = get(mem.py, _MISSING)
+            # An explicit None means "not specified", exactly like omitting the
+            # field -- which is what ``undefined`` means on the web.
+            if value is _MISSING or value is None:
+                value = default
                 if value is _MISSING:
                     if mem.required:
                         # No value and no default, and the IDL says there has to
@@ -165,37 +210,32 @@ class StructBuilder:
                         # alone -- see ``_set_string``.
                         getattr(ptr, mem.c).length = self._strlen
                     continue  # otherwise leave zero / NULL
-            self._set_member(ptr, mem, value, keep)
+            if setter is not None:
+                setter(ptr, mem, value, keep)
 
-    def _set_member(self, ptr, mem, value, keep: list):
-        field = mem.c
-        if mem.array:
-            self._set_array(ptr, mem, value, keep)
-        elif mem.kind == "enum":
-            setattr(ptr, field, self.enums.TO_INT[mem.ref][value])
-        elif mem.kind == "bitflag":
-            setattr(ptr, field, self.flags.TO_INT[mem.ref][value])
-        elif mem.kind == "prim":
-            if mem.pointer:
-                # A pointer to primitives is a buffer -- SPIR-V word arrays
-                # arrive this way.
-                cdata = self.ffi.from_buffer(value, require_writable=False)
-                keep.append(cdata)
-                setattr(ptr, field, self.ffi.cast(f"{mem.ref}_t *", cdata))
-            else:
-                setattr(ptr, field, self._scalar(mem, value))
-        elif mem.kind == "string":
-            self._set_string(getattr(ptr, field), value, keep)
-        elif mem.kind == "object":
-            setattr(ptr, field, self._handle(value))
-        elif mem.kind == "struct":
-            self._set_struct(ptr, mem, value, keep)
-        elif mem.kind == "callback":
-            self._set_callback(ptr, mem, value, keep)
-        elif mem.kind in ("c_void", "out_string"):
-            return  # not built from plain input mappings
-        else:  # pragma: no cover
-            raise TypeError(f"cannot marshal member kind {mem.kind!r} ({mem.c})")
+    # -- per-kind setters, bound once per struct by ``_plan`` ---------------
+
+    def _set_enum(self, ptr, mem, value, keep: list):
+        setattr(ptr, mem.c, self.enums.TO_INT[mem.ref][value])
+
+    def _set_bitflag(self, ptr, mem, value, keep: list):
+        setattr(ptr, mem.c, self.flags.TO_INT[mem.ref][value])
+
+    def _set_prim(self, ptr, mem, value, keep: list):
+        if mem.pointer:
+            # A pointer to primitives is a buffer -- SPIR-V word arrays
+            # arrive this way.
+            cdata = self.ffi.from_buffer(value, require_writable=False)
+            keep.append(cdata)
+            setattr(ptr, mem.c, self.ffi.cast(f"{mem.ref}_t *", cdata))
+        else:
+            setattr(ptr, mem.c, self._scalar(mem, value))
+
+    def _set_string_member(self, ptr, mem, value, keep: list):
+        self._set_string(getattr(ptr, mem.c), value, keep)
+
+    def _set_object(self, ptr, mem, value, keep: list):
+        setattr(ptr, mem.c, self._handle(value))
 
     def _chain(self, ptr, chain, keep: list):
         """Attach an extension struct to ``ptr``'s ``nextInChain``.

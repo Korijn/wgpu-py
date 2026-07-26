@@ -879,9 +879,14 @@ def test_poll_thread_only_runs_while_work_is_outstanding():
         size=64, usage=MapMode.READ | wgpu.BufferUsage.COPY_DST
     )
     promise = buffer.map_async("READ")
-    assert poller._token_ids, "an outstanding op did not claim the thread"
+    # Ask the operation what it claimed, rather than looking at the thread's
+    # live set: the poll thread runs concurrently and a 64-byte map can be
+    # complete before the next line, so reading _token_ids here is a race.
+    token = promise._keep[-1]
+    assert token is not None, "an outstanding op did not claim the thread"
     promise.sync_wait()
-    assert not poller._token_ids, "the token outlived the operation"
+    assert token.is_done(), "the token outlived the operation"
+    assert not poller._token_ids, "the thread is still held awake"
     buffer.unmap()
 
 
