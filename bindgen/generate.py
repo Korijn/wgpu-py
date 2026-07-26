@@ -153,7 +153,7 @@ def _parse_member_type(spec_type: str) -> tuple[str, str | None, bool]:
     return "prim", spec_type, is_array
 
 
-def _resolve_default(mem, kind, ref, lib):
+def _resolve_default(mem, kind, ref, lib, idl_default=None):
     """Resolve a spec default to something the runtime can use directly.
 
     Enum/bitflag member names become plain integers here, so the runtime never
@@ -161,6 +161,21 @@ def _resolve_default(mem, kind, ref, lib):
     stay symbolic because some are size_t-width and must be resolved per target.
     """
     default = mem.get("default")
+    if default is None and idl_default is not None:
+        # The IDL spells enum defaults as quoted web strings ("uniform"); the
+        # C-side value is looked up through the same table the runtime uses.
+        value = idl_default.strip().strip('"')
+        if kind == "enum":
+            from wgpu._generated import apienums  # noqa: PLC0415
+
+            table = apienums.TO_INT.get(ref)
+            return None if table is None else table[value]
+        if value in ("True", "False"):
+            return value == "True"
+        try:
+            return int(value)
+        except ValueError:
+            return None
     if not isinstance(default, str):
         return default
     if default.startswith("constant.") or default.startswith("0x"):
@@ -186,6 +201,19 @@ def generate_structs(spec, ffi, lib, bridge=None) -> str:
     # C struct name -> {C member -> public keyword}, from the IDL.
     public_names: dict[str, dict[str, str]] = {}
     adapters: dict[str, list[tuple[str, str]]] = {}
+    # The Web IDL carries defaults the C spec leaves unset -- a buffer binding
+    # layout's type is "uniform" there, and merely absent in webgpu.json. The
+    # public API's defaults are the IDL's, so they win where the C spec is silent.
+    idl_defaults: dict[str, dict[str, str]] = {}
+    if bridge is not None:
+        for idl_struct, fields in bridge.idl.structs.items():
+            spec_struct = bridge.structs.get(idl_struct)
+            if spec_struct is None:
+                continue
+            for fname, attr in fields.items():
+                c_member = bridge.struct_fields.get((idl_struct, fname))
+                if c_member is not None and attr.default is not None:
+                    idl_defaults.setdefault(spec_struct, {})[c_member] = attr.default
     if bridge is not None:
         for (idl_struct, idl_field), c_member in bridge.struct_fields.items():
             spec_struct = bridge.structs[idl_struct]
@@ -264,7 +292,10 @@ def generate_structs(spec, ffi, lib, bridge=None) -> str:
                     ref,
                     mem.get("pointer"),
                     bool(mem.get("optional", False)),
-                    _resolve_default(mem, kind, ref, lib),
+                    _resolve_default(
+                        mem, kind, ref, lib,
+                        idl_defaults.get(st["name"], {}).get(c_field),
+                    ),
                     is_array,
                     count_c,
                 )

@@ -111,7 +111,7 @@ STRUCTS['blend_component'] = StructDescriptor(
     c_name='WGPUBlendComponent',
     category='standalone',
     members=(
-        Member(py='operation', c='operation', kind='enum', ref='blend_operation', pointer=None, optional=False, default=None, array=False, count_c=None),
+        Member(py='operation', c='operation', kind='enum', ref='blend_operation', pointer=None, optional=False, default=1, array=False, count_c=None),
         Member(py='src_factor', c='srcFactor', kind='enum', ref='blend_factor', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='dst_factor', c='dstFactor', kind='enum', ref='blend_factor', pointer=None, optional=False, default=None, array=False, count_c=None),
     ),
@@ -130,7 +130,7 @@ STRUCTS['buffer_binding_layout'] = StructDescriptor(
     c_name='WGPUBufferBindingLayout',
     category='extensible',
     members=(
-        Member(py='type', c='type', kind='enum', ref='buffer_binding_type', pointer=None, optional=False, default=None, array=False, count_c=None),
+        Member(py='type', c='type', kind='enum', ref='buffer_binding_type', pointer=None, optional=False, default=2, array=False, count_c=None),
         Member(py='has_dynamic_offset', c='hasDynamicOffset', kind='prim', ref='bool', pointer=None, optional=False, default=False, array=False, count_c=None),
         Member(py='min_binding_size', c='minBindingSize', kind='prim', ref='uint64', pointer=None, optional=False, default=0, array=False, count_c=None),
     ),
@@ -438,7 +438,7 @@ STRUCTS['primitive_state'] = StructDescriptor(
     c_name='WGPUPrimitiveState',
     category='extensible',
     members=(
-        Member(py='topology', c='topology', kind='enum', ref='primitive_topology', pointer=None, optional=False, default=None, array=False, count_c=None),
+        Member(py='topology', c='topology', kind='enum', ref='primitive_topology', pointer=None, optional=False, default=4, array=False, count_c=None),
         Member(py='strip_index_format', c='stripIndexFormat', kind='enum', ref='index_format', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='front_face', c='frontFace', kind='enum', ref='front_face', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='cull_mode', c='cullMode', kind='enum', ref='cull_mode', pointer=None, optional=False, default=None, array=False, count_c=None),
@@ -576,7 +576,7 @@ STRUCTS['sampler_binding_layout'] = StructDescriptor(
     c_name='WGPUSamplerBindingLayout',
     category='extensible',
     members=(
-        Member(py='type', c='type', kind='enum', ref='sampler_binding_type', pointer=None, optional=False, default=None, array=False, count_c=None),
+        Member(py='type', c='type', kind='enum', ref='sampler_binding_type', pointer=None, optional=False, default=2, array=False, count_c=None),
     ),
 )
 
@@ -630,7 +630,7 @@ STRUCTS['stencil_face_state'] = StructDescriptor(
     c_name='WGPUStencilFaceState',
     category='standalone',
     members=(
-        Member(py='compare', c='compare', kind='enum', ref='compare_function', pointer=None, optional=False, default=None, array=False, count_c=None),
+        Member(py='compare', c='compare', kind='enum', ref='compare_function', pointer=None, optional=False, default=8, array=False, count_c=None),
         Member(py='fail_op', c='failOp', kind='enum', ref='stencil_operation', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='depth_fail_op', c='depthFailOp', kind='enum', ref='stencil_operation', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='pass_op', c='passOp', kind='enum', ref='stencil_operation', pointer=None, optional=False, default=None, array=False, count_c=None),
@@ -641,7 +641,7 @@ STRUCTS['storage_texture_binding_layout'] = StructDescriptor(
     c_name='WGPUStorageTextureBindingLayout',
     category='extensible',
     members=(
-        Member(py='access', c='access', kind='enum', ref='storage_texture_access', pointer=None, optional=False, default=None, array=False, count_c=None),
+        Member(py='access', c='access', kind='enum', ref='storage_texture_access', pointer=None, optional=False, default=2, array=False, count_c=None),
         Member(py='format', c='format', kind='enum', ref='texture_format', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='view_dimension', c='viewDimension', kind='enum', ref='texture_view_dimension', pointer=None, optional=False, default=None, array=False, count_c=None),
     ),
@@ -809,7 +809,7 @@ STRUCTS['texel_copy_texture_info'] = StructDescriptor(
         Member(py='texture', c='texture', kind='object', ref='texture', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='mip_level', c='mipLevel', kind='prim', ref='uint32', pointer=None, optional=False, default=0, array=False, count_c=None),
         Member(py='origin', c='origin', kind='struct', ref='origin_3D', pointer=None, optional=False, default=None, array=False, count_c=None),
-        Member(py='aspect', c='aspect', kind='enum', ref='texture_aspect', pointer=None, optional=False, default=None, array=False, count_c=None),
+        Member(py='aspect', c='aspect', kind='enum', ref='texture_aspect', pointer=None, optional=False, default=1, array=False, count_c=None),
     ),
 )
 
@@ -859,7 +859,7 @@ STRUCTS['texture_descriptor'] = StructDescriptor(
     members=(
         Member(py='label', c='label', kind='string', ref=None, pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='usage', c='usage', kind='bitflag', ref='texture_usage', pointer=None, optional=False, default=0, array=False, count_c=None),
-        Member(py='dimension', c='dimension', kind='enum', ref='texture_dimension', pointer=None, optional=False, default=None, array=False, count_c=None),
+        Member(py='dimension', c='dimension', kind='enum', ref='texture_dimension', pointer=None, optional=False, default=2, array=False, count_c=None),
         Member(py='size', c='size', kind='struct', ref='extent_3D', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='format', c='format', kind='enum', ref='texture_format', pointer=None, optional=False, default=None, array=False, count_c=None),
         Member(py='mip_level_count', c='mipLevelCount', kind='prim', ref='uint32', pointer=None, optional=False, default=1, array=False, count_c=None),
@@ -880,7 +880,7 @@ STRUCTS['texture_view_descriptor'] = StructDescriptor(
         Member(py='mip_level_count', c='mipLevelCount', kind='prim', ref='uint32', pointer=None, optional=False, default='constant.mip_level_count_undefined', array=False, count_c=None),
         Member(py='base_array_layer', c='baseArrayLayer', kind='prim', ref='uint32', pointer=None, optional=False, default=0, array=False, count_c=None),
         Member(py='array_layer_count', c='arrayLayerCount', kind='prim', ref='uint32', pointer=None, optional=False, default='constant.array_layer_count_undefined', array=False, count_c=None),
-        Member(py='aspect', c='aspect', kind='enum', ref='texture_aspect', pointer=None, optional=False, default=None, array=False, count_c=None),
+        Member(py='aspect', c='aspect', kind='enum', ref='texture_aspect', pointer=None, optional=False, default=1, array=False, count_c=None),
         Member(py='usage', c='usage', kind='bitflag', ref='texture_usage', pointer=None, optional=False, default=0, array=False, count_c=None),
     ),
 )
