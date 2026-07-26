@@ -60,12 +60,12 @@ class FlagMap(dict):
                 part = part.strip()
                 if not part:
                     continue
-                try:
-                    value |= dict.__getitem__(self, part.upper())
-                except KeyError:
-                    raise ValueError(
-                        f"Invalid flag for {self.name}: {part!r}"
-                    ) from None
+                # dict.get, not dict.__getitem__: the latter would come back
+                # through __missing__ and recurse on an unknown name.
+                one = dict.get(self, part.upper())
+                if one is None:
+                    raise ValueError(f"Invalid flag for {self.name}: {part!r}")
+                value |= one
             self._cache[key] = value
             return value
         raise ValueError(f"Invalid value for {self.name}: {key!r}")

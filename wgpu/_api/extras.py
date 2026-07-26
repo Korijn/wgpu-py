@@ -14,15 +14,15 @@ from __future__ import annotations
 def buffer_read_mapped(self, buffer_offset=None, size=None, *, copy=True):
     """Read from a mapped buffer.
 
-    With ``copy=True`` (the default) you get an independent ``bytearray`` that
-    stays valid after ``unmap()``. With ``copy=False`` you get a memoryview onto
-    the mapped memory, which is faster but becomes invalid once unmapped.
+    With ``copy=True`` (the default) you get an independent memoryview that
+    stays valid after ``unmap()``. With ``copy=False`` you get a view onto the
+    mapped memory itself: faster, but invalid once the buffer is unmapped.
     """
     from wgpu._api.overrides import check_mapped_for
 
     offset, size = check_mapped_for(self, "read", buffer_offset, size)
     view = self.get_mapped_range(offset, size)
-    return bytearray(view) if copy else view
+    return memoryview(bytearray(view)) if copy else view
 
 
 def buffer_write_mapped(self, data, buffer_offset=None):
@@ -75,8 +75,12 @@ def queue_read_buffer(self, buffer, buffer_offset=0, size=None):
     """
     from wgpu._generated import apiflags as flags
 
-    if size is None:
+    if not size:
         size = buffer.size - buffer_offset
+    if not (0 <= buffer_offset < buffer.size):
+        raise ValueError("Invalid buffer_offset")
+    if size > buffer.size - buffer_offset:
+        raise ValueError("Invalid size")
     device = self._parent
     staging = device.create_buffer(
         size=size, usage=flags.BufferUsage.COPY_DST | flags.BufferUsage.MAP_READ
@@ -86,7 +90,7 @@ def queue_read_buffer(self, buffer, buffer_offset=0, size=None):
     self.submit([encoder.finish()])
     staging.map_sync("READ")
     try:
-        return bytearray(staging.get_mapped_range(0, size))
+        return memoryview(bytearray(staging.get_mapped_range(0, size)))
     finally:
         staging.unmap()
         staging.destroy()
@@ -113,7 +117,7 @@ def queue_read_texture(self, source, data_layout, size):
     self.submit([encoder.finish()])
     staging.map_sync("READ")
     try:
-        return bytearray(staging.get_mapped_range(0, nbytes))
+        return memoryview(bytearray(staging.get_mapped_range(0, nbytes)))
     finally:
         staging.unmap()
         staging.destroy()
