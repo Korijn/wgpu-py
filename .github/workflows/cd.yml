@@ -1,8 +1,9 @@
 # Github Actions script to produce binary wheels.
 #
-# * One build to create all wheels (cross-platform).
-# * One build (with matrix) test the wheels on a selection of platforms.
-# * One build to publish the wheels on GitHub and Pypi.
+# Every wheel contains a CPython extension that statically links wgpu-native,
+# so there is nothing to download at install time -- but it does mean a wheel
+# per platform *and* per interpreter, built on a runner of that architecture.
+# cibuildwheel drives that matrix; the Rust build happens inside it.
 
 name: CD
 
@@ -18,7 +19,48 @@ on:
 jobs:
 
   build-wheels:
-    name: Build all wheels
+    name: Wheels for ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux x86_64
+            os: ubuntu-latest
+            archs: x86_64
+          - name: linux aarch64
+            os: ubuntu-24.04-arm
+            archs: aarch64
+          - name: macos arm64
+            os: macos-latest
+            archs: arm64
+          - name: macos x86_64
+            os: macos-15-intel  # the last Intel-based image
+            archs: x86_64
+          - name: windows amd64
+            os: windows-latest
+            archs: AMD64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The binding is compiled from the pinned submodule, so the build
+          # cannot start without it.
+          submodules: recursive
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.21
+        env:
+          CIBW_ARCHS: ${{ matrix.archs }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.archs }}-${{ runner.os }}
+          path: wheelhouse/*.whl
+
+  build-sdist:
+    name: Build sdist
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,23 +68,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install dev dependencies
+      - name: Build sdist
         run: |
-            python -m pip install --upgrade pip
-            pip install -U -e .[build]
-      - name: Build wheels (and sdist)
-        run: python tools/build_all_wheels.py
-      - name: Twine check
-        run: |
+            python -m pip install --upgrade pip build twine
+            python -m build --sdist
             twine check dist/*
-      - name: Upload distributions
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          path: dist
-          name: all_wheels
+          name: sdist
+          path: dist/*.tar.gz
 
   test-wheels:
-    name: Test wheel for ${{ matrix.name }}
+    name: Test wheel on ${{ matrix.name }}
     needs: [build-wheels]
     runs-on: ${{ matrix.os }}
     strategy:
@@ -53,9 +90,7 @@ jobs:
             os: windows-latest
           - name: macos arm64
             os: macos-latest
-          - name: macos x86_64
-            os: macos-15-intel  # planned as the last supported image based on Intel CPU
-          - name: linux amd64
+          - name: linux x86_64
             os: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -63,43 +98,44 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-    - name: Download assets
+    - name: Download wheels
       uses: actions/download-artifact@v4
       with:
         path: dist
-    - name: Flatten dist dir
+        pattern: wheels-*
+        merge-multiple: true
+    - name: Install a software GPU driver
+      if: runner.os == 'Linux'
+      run: |
+          sudo apt update
+          sudo apt install -y mesa-vulkan-drivers
+    - name: Install the wheel and use it
       shell: bash
       run: |
-          find dist -mindepth 2 -type f -exec mv -f '{}' dist/ ';'
-          rm -rf dist/*/
-    - name: Install and test wheel
-      shell: bash
-      run: |
-          # Install 'normally' to install deps, then force the install from dist-folder and nothing else
-          pip install .
-          rm -rf ./wgpu
-          pip install --force-reinstall --no-deps --no-index --find-links dist wgpu
+          # Install from the built wheels only -- never fall back to an index,
+          # or a passing test might be testing a released wgpu instead.
+          pip install --no-index --find-links dist wgpu
+          pip install numpy pytest
+          # Leave the repo, so `import wgpu` cannot resolve to the source tree.
           pushd $HOME
-          python -c 'import wgpu.backends.wgpu_native; print(wgpu.backends.wgpu_native._ffi.lib_path)'
+          python -c "
+          import wgpu
+          print('wgpu', wgpu.__version__)
+          import wgpu.backends.wgpu_native as native
+          print('wgpu-native', native.__version__)
+          adapter = wgpu.gpu.request_adapter_sync()
+          print('adapter', adapter.info['adapter_type'], adapter.info['backend_type'])
+          device = adapter.request_device_sync()
+          buf = device.create_buffer(size=256, usage='COPY_SRC|COPY_DST')
+          assert buf.size == 256
+          print('ok')
+          "
           popd
-          pip uninstall -y wgpu
-          git reset --hard HEAD
-    - name: Install from sdist
-      shell: bash
-      run: |
-          rm -rf ./wgpu
-          rm -rf ./dist/*.whl
-          # Install sdist, but no test, because there is no wgpu-native lib now.
-          filename=$(ls dist/*.tar.gz)
-          pip install $filename
-          python -c "import wgpu; print(wgpu.__version__)"
-          pip uninstall -y wgpu
-          git reset --hard HEAD
 
   publish:
     name: Publish to Github and Pypi
     runs-on: ubuntu-latest
-    needs: [build-wheels, test-wheels]
+    needs: [build-wheels, build-sdist, test-wheels]
     if: success() && startsWith(github.ref, 'refs/tags/v')
     environment:
       name: pypi
@@ -117,10 +153,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         path: dist
-    - name: Flatten dist dir
-      run: |
-        find dist -mindepth 2 -type f -exec mv -f '{}' dist/ ';'
-        rm -rf dist/*/
+        merge-multiple: true
     - name: Set version from git ref
       run: echo "WGPU_PY_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
     - name: Upload Release Assets
@@ -133,7 +166,7 @@ jobs:
             dist/*.tar.gz
             dist/*.whl
         body: |
-            Autogenerated binary wheels that include wgpu-native.
+            Binary wheels with wgpu-native compiled in.
             See [the changelog](https://github.com/pygfx/wgpu-py/blob/main/CHANGELOG.md) for details.
         draft: false
         prerelease: false

@@ -20,7 +20,7 @@ dependencies = [
 # For users
 imgui = ["imgui-bundle>=1.92.0, <2"]
 # For devs / ci
-build = ["build", "hatchling", "requests", "twine"]
+build = ["build", "cffi>=1.15.0", "cibuildwheel", "hatchling", "twine"]
 codegen = ["pytest", "numpy", "ruff"]
 lint = ["ruff", "pre-commit"]
 tests = [
@@ -54,25 +54,70 @@ Repository = "https://github.com/pygfx/wgpu-py"
 # * mesonpy: numpy, scikit-image, et al. use this because they compile stuff.
 
 [build-system]
-requires = ["requests", "hatchling"]
+requires = ["hatchling", "cffi>=1.15.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
 path = "wgpu/_version.py"
 
+# The sdist carries everything a build needs, including the wgpu-native Rust
+# sources -- building it is the whole point, and there is no prebuilt library
+# to fall back on any more. Cargo still fetches the crate dependencies, so a
+# source build needs a Rust toolchain and network access; binary wheels are
+# published for every supported platform so that most people never do one.
 [tool.hatch.build.targets.sdist]
-packages = ["wgpu"]
-exclude = ["*.so", "*.dll", "*.dylib"]
-force-include = { "tools" = "tools" }
+include = ["wgpu", "bindgen", "tools", "wgpu-native"]
+exclude = [
+    "*.so", "*.dll", "*.dylib", "*.pyd", "*.o", "*.obj",
+    "wgpu-native/target",   # Rust build output: ~1 GB of it
+    "wgpu-native/examples",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["wgpu"]
-artifacts = ["*.so", "*.dll", "*.dylib"]
+artifacts = ["*.so", "*.dll", "*.dylib", "*.pyd"]
+# The compiled extension is the deliverable; its C sources and objects are
+# build residue and would otherwise be swept up by the artifacts globs.
+exclude = ["wgpu/_native/*.c", "wgpu/_native/*.o", "wgpu/_native/*.obj"]
 
-# We use a hatch build hook to install the correct wgpu-native lib right before
-# the wheel is build, and to allow cross-platform builds. See the tools dir.
+# A hatch build hook compiles the cffi extension (statically linking the
+# wgpu-native submodule) right before the wheel is built. See tools/.
 [tool.hatch.build.targets.wheel.hooks.custom]
 path = "tools/hatch_build.py"
+
+# ===== Binary wheels
+#
+# Each wheel embeds a CPython extension that statically links wgpu-native, so
+# there is one per (platform, architecture, interpreter). cibuildwheel runs the
+# matrix; see .github/workflows/cd.yml.
+
+[tool.cibuildwheel]
+build = "cp311-* cp312-* cp313-*"
+# musllinux would need a musl Rust target and toolchain in the container, and
+# nobody has asked for it. manylinux covers the glibc distros.
+skip = "*-musllinux_*"
+build-frontend = "build"
+# Rust is the actual dependency here; the submodule is compiled, not fetched.
+# Building it once per interpreter would trip the matrix over the CI time
+# limit, so the archive is built in before-all and reused (the build hook skips
+# cargo when it is already present).
+before-all = "cargo build --release --lib --manifest-path wgpu-native/Cargo.toml"
+test-command = "python -c \"import wgpu; import wgpu.backends.wgpu_native as n; print(wgpu.__version__, n.__version__)\""
+
+[tool.cibuildwheel.linux]
+# The manylinux image has no Rust, and rustup's default install is not on PATH
+# for later steps, so it is placed somewhere the container already looks.
+before-all = """
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+source $HOME/.cargo/env
+cargo build --release --lib --manifest-path wgpu-native/Cargo.toml
+"""
+environment = { PATH = "$HOME/.cargo/bin:$PATH" }
+
+[tool.cibuildwheel.macos]
+# wgpu-native's Metal backend needs a deployment target new enough for the
+# frameworks rustc reports; 11.0 is the floor for arm64 anyway.
+environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"

@@ -259,12 +259,37 @@ Roughly a third are tests probing classic internals that need porting rather
 than implementation changes; the rest are genuine gaps, now in narrow areas
 rather than spread across the API.
 
+## Packaging
+
+The classic wheel was pure Python with a prebuilt `libwgpu_native.so`
+downloaded at build time and dropped in beside it. This one *is* a CPython
+extension with wgpu-native statically linked, so:
+
+* there is nothing to download, at build time or install time -- the binary is
+  compiled from the submodule commit that is pinned in git, so the wheel and
+  its native library cannot disagree about a version;
+* a wheel is specific to a platform, architecture **and** interpreter, so the
+  matrix is real: cp311/312/313 x {linux x86_64, linux aarch64, macOS arm64,
+  macOS x86_64, windows amd64}, driven by cibuildwheel (`.github/workflows/cd.yml`);
+* `tools/hatch_build.py` runs `cargo build --release` and then cffi, and marks
+  the wheel non-pure so hatchling infers the right tag.
+
+The sdist carries the wgpu-native sources too, so a source build works given a
+Rust toolchain; cargo still fetches the crate dependencies. Verified locally on
+linux x86_64: a wheel built from the sdist alone, installed into a clean
+virtualenv outside the repo, creates a device and a buffer on lavapipe. The
+extension is ~17 MiB uncompressed, ~5 MiB in the wheel -- comparable to the
+shared library the classic wheel shipped.
+
+CI also asserts that `wgpu/_generated` matches a fresh generator run, which is
+the check that keeps "fully generated" true rather than aspirational.
+
 ## What is left
 
 1. Finish the suite port (above).
-2. **Delete the classic implementation** once it is green.
-3. **CI**: the cibuildwheel matrix (still the last piece of the original goal).
-4. Push constants and the diagnostics subsystem.
+2. Push constants and the diagnostics subsystem.
+3. Descriptors that still marshal at runtime (arrays and nested structs) could
+   use the same compiled bodies as the flat ones.
 
 ## Acceptance gate
 
