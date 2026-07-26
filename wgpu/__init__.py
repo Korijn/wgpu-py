@@ -11,6 +11,7 @@ from .flags import *
 from .enums import *
 from .structs import *
 from .classes import *
+from .utils.device import *  # get_default_device et al are top-level names
 from . import utils
 from . import resources
 

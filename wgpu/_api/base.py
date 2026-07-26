@@ -88,7 +88,12 @@ class GPUObjectBase(Mixin):
         return self._uid
 
     def __repr__(self):
-        return f"<wgpu.{self.__class__.__name__} {self._label!r} at {hex(id(self))}>"
+        # The label is shown only when there is one, so the objects the spec
+        # gives no label (adapters, and the info bags) read as plain objects.
+        label = f" {self._label!r}" if self._label else ""
+        return (
+            f"<wgpu.{self.__class__.__name__} object{label} at {hex(id(self))}>"
+        )
 
     @property
     def _device(self):

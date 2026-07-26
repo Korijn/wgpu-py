@@ -40,8 +40,17 @@ def deprecated_sync_or_async(name: str):
 
 
 def _limits(obj) -> dict:
-    """``get_limits`` reports into an out-parameter; expose it as a dict."""
-    return dict(obj._get("get_limits"))
+    """``get_limits`` reports into an out-parameter; expose it as a dict.
+
+    Keys are hyphenated (``max-bind-groups``), which is the spelling wgpu-py
+    has always reported limits in -- and the one that reads back in unchanged,
+    since the struct builder normalises hyphens, underscores and camelCase
+    alike. The ``1D``/``2D``/``3D`` suffixes lowercase along with the rest.
+    """
+    return {
+        key.replace("_", "-").lower(): value
+        for key, value in obj._get("get_limits").items()
+    }
 
 
 def _features(obj) -> set:
@@ -181,9 +190,28 @@ def buffer_map_async(self, mode, offset=0, size=None):
         raise RuntimeError("Buffer is already mapped.")
     mode = _map_mode(mode)
     offset, size = _check_range(self, offset, size)
+    _flush_queue_writes(self)
     promise = self._call("map_async", mode, offset, size)
     self._map_status = (offset, offset + size, mode)
     return promise
+
+
+def _flush_queue_writes(buffer):
+    """Make sure queued writes have landed before the buffer is mapped.
+
+    ``queue.write_buffer``, and unmapping a buffer created with
+    ``mapped_at_creation``, stage their data in wgpu-native rather than writing
+    it through; the staged copies only run on the next queue submit. Mapping
+    does not trigger one, so without this a read-back sees whatever was in the
+    buffer before -- silently, and with plausible-looking stale bytes.
+
+    By the spec, mapping observes everything already ordered on the queue, so
+    an empty submit is what makes that true here. It costs one C call, on an
+    operation that is already asynchronous and expensive.
+    """
+    device = buffer._device
+    if device is not None:
+        device.queue.submit([])
 
 
 def _map_mode(mode):
@@ -213,8 +241,16 @@ def buffer_unmap(self):
 
 def buffer_get_mapped_range(self, offset=0, size=None):
     """A memoryview onto the mapped range. Invalid once the buffer is unmapped."""
+    from wgpu._generated import apiflags
+
     offset, size = _check_range(self, offset, size)
-    return self._call("get_mapped_range", offset, size)
+    view = self._call("get_mapped_range", offset, size)
+    if not self._map_status[2] & apiflags.MapMode.WRITE:
+        # Mapped for reading only. wgpu-native hands back the memory either
+        # way, but writing into it would be discarded on unmap rather than
+        # uploaded, so the view says so instead of failing quietly.
+        view = view.toreadonly()
+    return view
 
 
 @property
@@ -286,6 +322,35 @@ def track_mapped_at_creation(generated_create_buffer):
         return buffer
 
     return create_buffer
+
+
+def check_clear_range(generated_clear_buffer):
+    """Wrap ``clear_buffer`` to reject a bad range before recording it.
+
+    ``clear_buffer`` is a command *recorded* into an encoder, so wgpu-native
+    only rejects a misaligned offset at ``finish()`` -- a long way from the
+    call that caused it. These four conditions are cheap to check here, and
+    wgpu-py has always raised ValueError for them at the call itself.
+    """
+    import functools
+
+    @functools.wraps(generated_clear_buffer)
+    def clear_buffer(self, buffer, offset=0, size=None):
+        offset = int(offset)
+        if offset < 0 or offset % 4:
+            raise ValueError("clear_buffer offset must be a multiple of 4, and >= 0")
+        if size is None:
+            if offset > buffer.size:
+                raise ValueError("clear_buffer offset is past the end of the buffer")
+        else:
+            size = int(size)
+            if size <= 0 or size % 4:
+                raise ValueError("clear_buffer size must be a multiple of 4, and > 0")
+            if offset + size > buffer.size:
+                raise ValueError("clear_buffer range is past the end of the buffer")
+        return generated_clear_buffer(self, buffer, offset, size)
+
+    return clear_buffer
 
 
 #: The depth-stencil attachment keys that only apply when the attached texture

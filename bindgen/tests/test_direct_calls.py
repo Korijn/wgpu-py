@@ -81,7 +81,7 @@ def _compute_setup(device):
 def test_set_bind_group_with_dynamic_offsets(device):
     """The slow path still works: offsets are marshalled and actually applied."""
     bgl, pipeline = _compute_setup(device)
-    align = device.limits["min_storage_buffer_offset_alignment"]
+    align = device.limits["min-storage-buffer-offset-alignment"]
     buf = device.create_buffer(size=align * 2, usage="STORAGE|COPY_SRC|COPY_DST")
     device.queue.write_buffer(buf, 0, bytes(align * 2))
     bind_group = device.create_bind_group(

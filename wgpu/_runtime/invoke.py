@@ -262,7 +262,8 @@ class Invoker:
         cfunc = getattr(self.lib, method.c_func)
         if method.is_async:
             return self._call_async(
-                method, cfunc, self_handle, c_args, keep, pump, caller
+                method, cfunc, self_handle, c_args, keep, pump, caller,
+                label=_descriptor_label(py_args),
             )
         c_ret = cfunc(self_handle, *c_args)
         outs = [k for k in keep if isinstance(k, tuple) and k and k[0] == "out"]
@@ -273,7 +274,9 @@ class Invoker:
             return self.structs.read(ref, ptr[0])
         return self.wrap_return(method, c_ret, pump, caller, py_args)
 
-    def _call_async(self, method, cfunc, self_handle, c_args, keep, pump, caller=None):
+    def _call_async(
+        self, method, cfunc, self_handle, c_args, keep, pump, caller=None, label=""
+    ):
         if pump is None:
             raise RuntimeError(f"{method.py}() is async but no event pump is available")
         future = WgpuPromise(method.py, pump)
@@ -295,9 +298,13 @@ class Invoker:
                     msg = _message(self.ffi, rest)
                     future._wgpu_set_error(RuntimeError(f"{method.py} failed: {msg}"))
                 elif result_ref is not None:
-                    future._wgpu_set_input(
-                        self._wrap_object(result_ref, rest[0], pump, caller)
-                    )
+                    obj = self._wrap_object(result_ref, rest[0], pump, caller)
+                    # The label is Python-side state, and this is the only
+                    # place the object exists to receive it: an async create
+                    # returns a promise, so ``_call_desc`` never sees it.
+                    if label and obj is not None:
+                        obj._label = label
+                    future._wgpu_set_input(obj)
                 else:
                     future._wgpu_set_input(int(status))
             except BaseException as exc:
@@ -309,6 +316,13 @@ class Invoker:
         future._keep = (info, _cb, keep, caller)
         cfunc(self_handle, *c_args, info[0])
         return future
+
+
+def _descriptor_label(py_args) -> str:
+    """The label from a single-descriptor call, if there is one."""
+    if len(py_args) == 1 and hasattr(py_args[0], "get"):
+        return py_args[0].get("label") or ""
+    return ""
 
 
 def _message(ffi, rest) -> str:
