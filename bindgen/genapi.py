@@ -378,14 +378,8 @@ def generate_api_structs(b: bridge.Bridge) -> str:
 #: cannot be generated. The class body is emitted without them and
 #: ``wgpu._api.overrides`` supplies the implementation. Each entry says why.
 HAND_WRITTEN = {
-    # Takes an extra ``data_offset`` and derives ``size`` from the buffer.
-    ("GPUQueue", "writeBuffer"),
-    # C needs an explicit byte count that the IDL derives from the data.
-    ("GPUQueue", "writeTexture"),
     # The IDL overloads this with a dynamic-offsets slice; C takes the array.
     ("GPUBindingCommandsMixin", "setBindGroup"),
-    # The IDL slices the source data; C takes a pointer plus a byte count.
-    ("GPUBindingCommandsMixin", "setImmediates"),
     # The spec defines an omitted size as "the rest of the buffer", which is a
     # value only the Python side knows -- wgpu-native rejects the C sentinel.
     ("GPUBuffer", "mapAsync"),
@@ -533,6 +527,7 @@ def generate_api_classes(b: bridge.Bridge, spec: dict, native=None) -> str:
         "from wgpu._api import overrides as _ov",
         "from wgpu._api.base import unimplemented as _unimplemented",
         "from wgpu._api.base import GPUObjectBase, Mixin, new_object as _new_object",
+        "from wgpu._api.base import slice_data as _slice_data",
         "from wgpu._api.types import ArrayLike, CanvasLike",
         "from wgpu._generated import apienums as enums",
         "from wgpu._generated import apiflags as flags",
@@ -768,6 +763,59 @@ def _emit_attr(b, cls_name, attr_name, spec_methods) -> list[str]:
     ]
 
 
+#: IDL parameters that describe a *window* into the data rather than a value
+#: C receives. They never map to a C argument; they slice the buffer first.
+_WINDOW_OFFSET_PARAMS = frozenset({"dataOffset"})
+
+
+def _data_slice_body(b, spec_method, params, py) -> tuple[str, str] | None:
+    """Emit a body for methods that hand raw bytes to C, or None.
+
+    The web API passes a buffer plus an optional ``(dataOffset, size)`` window;
+    C wants a pointer and an explicit byte count. Three methods share that
+    shape -- ``writeBuffer``, ``writeTexture``, ``setImmediates`` -- so it is
+    derived rather than written three times.
+
+    C arguments are matched to IDL parameters positionally, skipping the two
+    the C API synthesises (the pointer and its byte count). Whatever IDL
+    parameter is left over is the window's size.
+    """
+    from . import generate
+
+    args = spec_method.get("args", [])
+    kinds = [generate._parse_member_type(a["type"])[0] for a in args]
+    if "c_void" not in kinds:
+        return None
+    data_at = kinds.index("c_void")
+    count_at = data_at + 1
+    if count_at >= len(kinds) or kinds[count_at] != "prim":
+        return None  # raw data with no byte count: not this shape
+
+    offset_param = next((p for p in params if p.name in _WINDOW_OFFSET_PARAMS), None)
+    rest = [p for p in params if p is not offset_param]
+
+    exprs, index = [], 0
+    for position in range(len(args)):
+        if position == data_at:
+            exprs.append("_chunk")
+            index += 1  # the IDL's ``data`` parameter
+        elif position == count_at:
+            exprs.append("_chunk.nbytes")  # synthesised, consumes no parameter
+        else:
+            if index >= len(rest):
+                return None
+            exprs.append(_ident(bridge.camel_to_snake(rest[index].name)))
+            index += 1
+    size_param = rest[index] if index < len(rest) else None
+
+    data_name = "data"
+    offset = _ident(bridge.camel_to_snake(offset_param.name)) if offset_param else "0"
+    size = _ident(bridge.camel_to_snake(size_param.name)) if size_param else "None"
+    prologue = f"_chunk = _slice_data({data_name}, {offset}, {size})"
+    call = f"self._call({spec_method['name']!r}, {', '.join(exprs)})"
+    return prologue, call
+
+
 def _direct_body(b, spec_object, spec_method, params, binds, native) -> str | None:
     """Return a direct C-call expression for this method, or None.
 
@@ -884,6 +932,7 @@ def _emit_method(
     ret = decl.split(" ", 1)[0]
     ann = _annotate(b.idl, ret)
 
+    prologue = None
     args = spec_method.get("args", [])
     flattened = (
         len(params) == 1
@@ -901,7 +950,14 @@ def _emit_method(
             f"def {_ident(py)}(self) -> {ann}:"
         )
     else:
-        if len(params) != len(args):
+        call = _unimplemented_body(spec_object, spec_method)
+        if call is None:
+            # Methods that hand raw bytes to C carry extra IDL parameters (the
+            # slice window), so this is tried before the arity check.
+            sliced = _data_slice_body(b, spec_method, params, py)
+            if sliced is not None:
+                prologue, call = sliced
+        if call is None and len(params) != len(args):
             raise RuntimeError(
                 f"{cls_name}.{fn_name}: {len(params)} IDL params vs "
                 f"{len(args)} C args; add it to HAND_WRITTEN"
@@ -918,7 +974,6 @@ def _emit_method(
                 sig_parts.append(f"{name}: {pann} = {default}")
         sig = ", ".join(sig_parts)
         passthrough = "".join(f", {n}" for n in names)
-        call = _unimplemented_body(spec_object, spec_method)
         if call is None and not is_async and binds is not None:
             call = _direct_body(b, spec_object, spec_method, params, binds, native)
         if call is None:
@@ -927,7 +982,10 @@ def _emit_method(
 
     doc = f'        """{cls_name}.{fn_name} -- see the WebGPU specification."""'
     if not is_async:
-        return [f"    {decl}", doc, f"        return {call}", ""]
+        body = [f"    {decl}", doc]
+        if prologue:
+            body.append(f"        {prologue}")
+        return [*body, f"        return {call}", ""]
 
     # Promise-returning: wgpu-py exposes both a blocking and an awaitable form.
     # Unless the IDL already has a separate synchronous sibling, in which case

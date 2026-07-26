@@ -168,3 +168,25 @@ def unimplemented(c_func: str):
     raise NotImplementedError(
         f"{c_func} is declared by wgpu-native but not implemented by it."
     )
+
+
+def slice_data(data, offset=0, size=None):
+    """A byte view of ``data``, optionally windowed.
+
+    The web API lets a caller hand over a large buffer plus a window into it,
+    where C takes only a pointer and a length. Used by the generated methods
+    that pass raw bytes -- queue writes and immediate data.
+    """
+    view = data if isinstance(data, memoryview) else memoryview(data)
+    if not offset and size is None:
+        return view  # the whole thing, with no re-cast
+    view = view.cast("B")
+    if size is None:
+        size = view.nbytes - offset
+    chunk = view[offset : offset + size]
+    if chunk.nbytes != size:
+        raise ValueError(
+            f"need {size} bytes from offset {offset}, but the data has only "
+            f"{view.nbytes - offset}"
+        )
+    return chunk

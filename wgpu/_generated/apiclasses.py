@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from wgpu._api import overrides as _ov
 from wgpu._api.base import unimplemented as _unimplemented
 from wgpu._api.base import GPUObjectBase, Mixin, new_object as _new_object
+from wgpu._api.base import slice_data as _slice_data
 from wgpu._api.types import ArrayLike, CanvasLike
 from wgpu._generated import apienums as enums
 from wgpu._generated import apiflags as flags
@@ -35,7 +36,6 @@ _c_wgpuComputePassEncoderDispatchWorkgroupsIndirect = _lib.wgpuComputePassEncode
 _c_wgpuComputePassEncoderEnd = _lib.wgpuComputePassEncoderEnd
 _c_wgpuComputePassEncoderPopDebugGroup = _lib.wgpuComputePassEncoderPopDebugGroup
 _c_wgpuComputePassEncoderSetBindGroup = _lib.wgpuComputePassEncoderSetBindGroup
-_c_wgpuComputePassEncoderSetImmediates = _lib.wgpuComputePassEncoderSetImmediates
 _c_wgpuComputePassEncoderSetPipeline = _lib.wgpuComputePassEncoderSetPipeline
 _c_wgpuComputePipelineGetBindGroupLayout = _lib.wgpuComputePipelineGetBindGroupLayout
 _c_wgpuDeviceDestroy = _lib.wgpuDeviceDestroy
@@ -47,7 +47,6 @@ _c_wgpuRenderBundleEncoderDrawIndexedIndirect = _lib.wgpuRenderBundleEncoderDraw
 _c_wgpuRenderBundleEncoderDrawIndirect = _lib.wgpuRenderBundleEncoderDrawIndirect
 _c_wgpuRenderBundleEncoderPopDebugGroup = _lib.wgpuRenderBundleEncoderPopDebugGroup
 _c_wgpuRenderBundleEncoderSetBindGroup = _lib.wgpuRenderBundleEncoderSetBindGroup
-_c_wgpuRenderBundleEncoderSetImmediates = _lib.wgpuRenderBundleEncoderSetImmediates
 _c_wgpuRenderBundleEncoderSetIndexBuffer = _lib.wgpuRenderBundleEncoderSetIndexBuffer
 _c_wgpuRenderBundleEncoderSetPipeline = _lib.wgpuRenderBundleEncoderSetPipeline
 _c_wgpuRenderBundleEncoderSetVertexBuffer = _lib.wgpuRenderBundleEncoderSetVertexBuffer
@@ -60,7 +59,6 @@ _c_wgpuRenderPassEncoderEnd = _lib.wgpuRenderPassEncoderEnd
 _c_wgpuRenderPassEncoderEndOcclusionQuery = _lib.wgpuRenderPassEncoderEndOcclusionQuery
 _c_wgpuRenderPassEncoderPopDebugGroup = _lib.wgpuRenderPassEncoderPopDebugGroup
 _c_wgpuRenderPassEncoderSetBindGroup = _lib.wgpuRenderPassEncoderSetBindGroup
-_c_wgpuRenderPassEncoderSetImmediates = _lib.wgpuRenderPassEncoderSetImmediates
 _c_wgpuRenderPassEncoderSetIndexBuffer = _lib.wgpuRenderPassEncoderSetIndexBuffer
 _c_wgpuRenderPassEncoderSetPipeline = _lib.wgpuRenderPassEncoderSetPipeline
 _c_wgpuRenderPassEncoderSetScissorRect = _lib.wgpuRenderPassEncoderSetScissorRect
@@ -144,7 +142,10 @@ class GPUBindingCommandsMixin(Mixin):
 
     set_bind_group = _ov.binding_commands_set_bind_group
 
-    set_immediates = _ov.binding_commands_set_immediates
+    def set_immediates(self, range_offset: int, data: ArrayLike, data_offset: int = 0, data_size: int | None = None) -> None:
+        """GPUBindingCommandsMixin.setImmediates -- see the WebGPU specification."""
+        _chunk = _slice_data(data, data_offset, data_size)
+        return self._call('set_immediates', range_offset, _chunk, _chunk.nbytes)
 
 
 
@@ -281,8 +282,6 @@ class GPUComputePassEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingC
         return _c_wgpuComputePassEncoderPopDebugGroup(self._handle)
 
     _c_set_bind_group = staticmethod(_c_wgpuComputePassEncoderSetBindGroup)
-
-    _c_set_immediates = staticmethod(_c_wgpuComputePassEncoderSetImmediates)
 
 
 
@@ -443,9 +442,15 @@ class GPUQueue(GPUObjectBase):
 
     on_submitted_work_done = _ov.deprecated_sync_or_async('on_submitted_work_done')
 
-    write_buffer = _ov.queue_write_buffer
+    def write_buffer(self, buffer: GPUBuffer, buffer_offset: int, data: ArrayLike, data_offset: int = 0, size: int | None = None) -> None:
+        """GPUQueue.writeBuffer -- see the WebGPU specification."""
+        _chunk = _slice_data(data, data_offset, size)
+        return self._call('write_buffer', buffer, buffer_offset, _chunk, _chunk.nbytes)
 
-    write_texture = _ov.queue_write_texture
+    def write_texture(self, destination: structs.TexelCopyTextureInfoStruct, data: ArrayLike, data_layout: structs.TexelCopyBufferLayoutStruct, size: tuple[int, int, int] | structs.Extent3DStruct) -> None:
+        """GPUQueue.writeTexture -- see the WebGPU specification."""
+        _chunk = _slice_data(data, 0, None)
+        return self._call('write_texture', destination, _chunk, _chunk.nbytes, data_layout, size)
 
 
 
@@ -503,8 +508,6 @@ class GPURenderBundleEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBinding
         return _c_wgpuRenderBundleEncoderPopDebugGroup(self._handle)
 
     _c_set_bind_group = staticmethod(_c_wgpuRenderBundleEncoderSetBindGroup)
-
-    _c_set_immediates = staticmethod(_c_wgpuRenderBundleEncoderSetImmediates)
 
     def set_pipeline(self, pipeline: GPURenderPipeline) -> None:
         """GPURenderBundleEncoder.setPipeline -- see the WebGPU specification."""
@@ -577,8 +580,6 @@ class GPURenderPassEncoder(GPUCommandsMixin, GPUDebugCommandsMixin, GPUBindingCo
         return _c_wgpuRenderPassEncoderPopDebugGroup(self._handle)
 
     _c_set_bind_group = staticmethod(_c_wgpuRenderPassEncoderSetBindGroup)
-
-    _c_set_immediates = staticmethod(_c_wgpuRenderPassEncoderSetImmediates)
 
     def set_pipeline(self, pipeline: GPURenderPipeline) -> None:
         """GPURenderPassEncoder.setPipeline -- see the WebGPU specification."""

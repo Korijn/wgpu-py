@@ -112,38 +112,6 @@ def device_onuncapturederror(self, handler):
 # -- methods whose Python signature differs from the C one -------------------
 
 
-def queue_write_buffer(self, buffer, buffer_offset, data, data_offset=0, size=None):
-    """Write data into a buffer.
-
-    The web API slices the source itself, so this takes ``data_offset``/``size``
-    in *bytes* and hands wgpu-native only the resulting view.
-    """
-    view = data if isinstance(data, memoryview) else memoryview(data)
-    if data_offset == 0 and size is None:
-        # The common case: the whole source goes in, so there is nothing to
-        # slice and no need to re-cast to bytes.
-        return self._call("write_buffer", buffer, buffer_offset, view, view.nbytes)
-    view = view.cast("B")
-    if size is None:
-        size = view.nbytes - data_offset
-    chunk = view[data_offset : data_offset + size]
-    if chunk.nbytes != size:
-        raise ValueError(
-            f"write_buffer: need {size} bytes from offset {data_offset}, "
-            f"but the data has only {view.nbytes - data_offset}"
-        )
-    return self._call("write_buffer", buffer, buffer_offset, chunk, size)
-
-
-def queue_write_texture(self, destination, data, data_layout, size):
-    """Write data into a texture.
-
-    C wants the byte count spelled out; the web API derives it from the data.
-    """
-    view = memoryview(data).cast("B")
-    return self._call("write_texture", destination, view, view.nbytes, data_layout, size)
-
-
 def binding_commands_set_bind_group(
     self,
     index,
@@ -177,15 +145,6 @@ def binding_commands_set_bind_group(
         ]
     offsets = [int(i) for i in dynamic_offsets_data]
     return self._call("set_bind_group", index, bind_group, offsets)
-
-
-def binding_commands_set_immediates(self, range_offset, data, data_offset=0, data_size=None):
-    """Set immediate data, slicing the source the way the web API does."""
-    view = memoryview(data).cast("B")
-    if data_size is None:
-        data_size = view.nbytes - data_offset
-    chunk = view[data_offset : data_offset + data_size]
-    return self._call("set_immediate_data", range_offset, chunk, chunk.nbytes)
 
 
 # -- buffer mapping ----------------------------------------------------------
