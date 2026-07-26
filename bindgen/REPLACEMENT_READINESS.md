@@ -121,7 +121,7 @@ structural -- stop making one Python call per GPU command:
 
 ## Porting the historical suite
 
-In progress. **153 of 235 tests pass**, with no errors and no crashes -- from a
+In progress. **171 of 235 tests pass**, with no errors and no crashes -- from a
 suite that would not even collect.
 
 It has earned its keep repeatedly, finding bugs nothing else did:
@@ -134,39 +134,42 @@ It has earned its keep repeatedly, finding bugs nothing else did:
   unwind across FFI. Four test files died outright. The generator now reads
   wgpu-native's own `unimplemented.rs` and emits a guard.
 * **Invalid buffer ranges aborted rather than raising.** The mapped range is
-  now tracked in Python and every offset and size validated before it reaches
-  C -- which is also how `map_state` is answered, since the C getter is one of
-  the unimplemented ones.
+  tracked in Python and every offset and size validated before it reaches C --
+  which is also how `map_state` is answered, since the C getter is unimplemented.
 * **Omitted nested structs lost their defaults.** An omitted multisample state
-  reached wgpu-native with `count: 0`. The IDL distinguishes exactly which
-  nested structs default to `{}`, and that now rides in the descriptor.
+  reached wgpu-native with `count: 0`. The IDL says exactly which nested
+  structs default to `{}`, and that now rides in the descriptor.
 * **A zero size aborted the process.** `set_vertex_buffer(slot, buf, 0, 0)`
-  reached C as a zero-length binding; a falsy size means "the rest", as it
-  always has in wgpu-py.
+  reached C as a zero-length binding; a falsy size means "the rest".
+* **Adapter info came back empty.** `out_string` members were never read, so
+  `summary` reported `unknown | 6 | 3`.
 
-Several long-standing conveniences were missing and are now supported
-generically, driven by the descriptors rather than per-struct code: positional
-struct values (`size=(64, 64, 1)`), hyphenated field names, mappings for
-key/value arrays (pipeline constants), and underscored enum spellings.
+Conveniences that had gone missing are back, all descriptor-driven rather than
+per-struct: positional struct values (`size=(64, 64, 1)`), every field spelling
+the specs use (`max_bind_groups` / `max-bind-groups` / `maxBindGroups`),
+mappings for key/value arrays (pipeline constants, including numeric `@id`
+keys), underscored enum spellings, `layout="auto"`, SPIR-V shader source, and
+the container protocol on enums (`"low-power" in wgpu.PowerPreference`).
+
+Performance was re-measured after all of this: unchanged on the hot path, and
+`create_buffer` improved to 9.3 us because field-name normalisation only runs
+when a key does not already match.
 
 ### Remaining failures, by file
 
-| file | failing |
-| --- | ---: |
-| `test_wgpu_native_basics.py` | 18 |
-| `test_wgpu_native_render.py` | 8 |
-| `test_set_override.py` | 8 |
-| `test_api.py` | 8 |
-| `test_util_default_device.py` | 7 |
-| `test_wgpu_native_query_set.py` | 6 |
-| `test_wgpu_native_errors.py` | 6 |
-| `test_wgpu_native_buffer.py` | 5 |
-| others (9 files) | 16 |
+| file | failing | mostly |
+| --- | ---: | --- |
+| `test_wgpu_native_basics.py` | 14 | probes `_api` / `_helpers` / `lib_path` internals |
+| `test_wgpu_native_render.py` | 8 | depth/stencil validation details |
+| `test_set_override.py` | 8 | WGSL override plumbing |
+| `test_api.py` | 8 | classic construction and backend registration |
+| `test_wgpu_native_query_set.py` | 6 | query resolution |
+| `test_wgpu_native_buffer.py` | 5 | mapping edge cases |
+| others (9 files) | 15 | immediates, statistics, canvas, diagnostics |
 
-Roughly a third are tests probing classic internals (`_api`, `_helpers`,
-`lib_path`, `_nbytes`) that need porting rather than implementation changes.
-The rest are genuine gaps: error scopes (`push_error_scope`/`pop_error_scope`),
-SPIR-V shader source, immediates, query-set details, and the canvas context.
+Roughly a third are tests probing classic internals that need porting rather
+than implementation changes; the rest are genuine gaps, now in narrow areas
+rather than spread across the API.
 
 ## What is left
 
