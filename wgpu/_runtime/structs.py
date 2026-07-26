@@ -135,7 +135,13 @@ class StructBuilder:
             if value is _MISSING:
                 value = self._default(mem)
                 if value is _MISSING:
-                    continue  # leave zero / NULL
+                    if mem.kind == "struct" and not mem.pointer and not mem.array:
+                        # A struct embedded by value still has to be built when
+                        # it is omitted, or its own defaults never apply -- an
+                        # omitted multisample state would leave count at 0.
+                        value = {}
+                    else:
+                        continue  # leave zero / NULL
             self._set_member(ptr, mem, value, keep)
 
     def _set_member(self, ptr, mem, value, keep: list):
@@ -228,6 +234,18 @@ class StructBuilder:
             setattr(ptr, mem.c, child[0])
 
     def _set_array(self, ptr, mem, value, keep: list):
+        if mem.kind == "struct" and hasattr(value, "items"):
+            # The web API passes pipeline constants as a mapping; C wants an
+            # array of two-field key/value structs. The field names come from
+            # the descriptor, so this is not specific to constants.
+            child = self.structs[mem.ref]
+            if len(child.members) != 2:
+                raise TypeError(
+                    f"{mem.py}: a mapping is only accepted for two-field structs, "
+                    f"and {child.c_name} has {len(child.members)}"
+                )
+            key_name, value_name = (m.py for m in child.members)
+            value = [{key_name: k, value_name: v} for k, v in value.items()]
         items = list(value)
         n = len(items)
         setattr(ptr, mem.count_c, n)
