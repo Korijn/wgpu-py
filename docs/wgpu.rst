@@ -43,8 +43,8 @@ This API is derived from the WebGPU spec, but differs in a few ways:
 
 Further changes:
 
-.. autodata:: wgpu._classes.apidiff
-    :annotation: Differences of base API:
+The differences from the base API are listed in ``wgpu/_api/__init__.py``,
+where each one is attached explicitly with the reason it diverges.
 
 
 Each backend may implement extra functionality on top of the base API.
