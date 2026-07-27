@@ -90,7 +90,15 @@ class FlagMap(dict):
                 # through __missing__ and recurse on an unknown name.
                 one = dict.get(self, part.upper())
                 if one is None:
-                    raise InvalidValueError(f"Invalid flag for {self.name}: {part!r}")
+                    # A flag written as an integer literal -- "0xF", "15".
+                    # wgpu-py has always taken these, and the examples pass
+                    # ColorWrite.ALL that way; base 0 honours the 0x prefix.
+                    try:
+                        one = int(part, 0)
+                    except ValueError:
+                        raise InvalidValueError(
+                            f"Invalid flag for {self.name}: {part!r}"
+                        ) from None
                 value |= one
             self._cache[key] = value
             return value

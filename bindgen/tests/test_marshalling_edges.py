@@ -747,3 +747,21 @@ def test_api_tracing_refuses_rather_than_writing_nothing(wgpu):
     with pytest.raises(NotImplementedError) as info:
         native.request_device_sync(adapter, "/tmp/some-trace-dir")
     assert "wgpu-native" in str(info.value)
+
+
+def test_flags_accept_an_integer_literal_string():
+    """"0xF" is a flag value wgpu-py has always taken, and the examples use it.
+
+    The named members are the documented spelling, but a mask written out as a
+    number -- from a config file, or copied from the C headers -- reached the
+    flag map as a string and was rejected, which broke the triangle example.
+    """
+    from wgpu._generated.apiflags import TO_INT
+    from wgpu._runtime.errors import InvalidValueError
+
+    mask = TO_INT["color_write_mask"]
+    assert mask["0xF"] == mask["ALL"]
+    assert mask["15"] == mask["ALL"]
+    assert mask["RED|0x2"] == mask["RED"] | mask["GREEN"]
+    with pytest.raises(InvalidValueError):
+        mask["not_a_flag"]
