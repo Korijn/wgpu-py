@@ -105,6 +105,12 @@ before-all = "cargo build --release --lib --manifest-path wgpu-native/Cargo.toml
 test-command = "python -c \"import wgpu; import wgpu.backends.wgpu_native as n; print(wgpu.__version__, n.__version__)\""
 
 [tool.cibuildwheel.linux]
+# Pinned rather than left to the default, so a cibuildwheel upgrade cannot
+# quietly raise the glibc floor. manylinux2014 is glibc 2.17, which is also
+# the minimum for Rust's x86_64/aarch64 linux-gnu targets -- so this is the
+# oldest baseline the toolchain can actually produce.
+manylinux-x86_64-image = "manylinux2014"
+manylinux-aarch64-image = "manylinux2014"
 # The manylinux image has no Rust, and rustup's default install is not on PATH
 # for later steps, so it is placed somewhere the container already looks.
 before-all = """

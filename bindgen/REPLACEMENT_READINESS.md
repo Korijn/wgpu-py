@@ -208,16 +208,26 @@ Note that creating and dropping GPU objects in a loop gets steadily slower in
 reclamation, not the bindings. The benchmark settles between repeats so it
 measures the Python layer rather than accumulated garbage.
 
-### What would push it further
+### What would push it further, and who has to do it
 
-Per-call tuning is close to done: we are near the floor for *any* Python
-binding, and a hand-written C extension might buy 2x more at the cost of the
-"everything is generated" property. The remaining order of magnitude is
-structural -- stop making one Python call per GPU command:
+Per-call tuning is done: we are near the floor for *any* Python binding, and a
+hand-written C extension might buy 2x more at the cost of the "everything is
+generated" property. The remaining order of magnitude is structural -- stop
+making one Python call per GPU command.
 
-* **render bundles**, already generated, record once and replay with one call;
-* **`multi_draw_indirect`** (a wgpu-native extra, not yet wrapped);
-* **batched setters** that take an array of draw parameters and loop in C.
+**That work is not in this library.** The two techniques that achieve it are
+both already exposed and tested here:
+
+* **render bundles** record once and replay with one call -- generated, and
+  covered by `test_wgpu_native_render.py`, `test_set_immediates.py` and
+  `test_wgpu_vertex_instance.py`;
+* **`multi_draw_indirect`** and its indexed and `*_count` variants are wrapped
+  in `wgpu/backends/wgpu_native/extras.py` (they are wgpu-native extras, in
+  `wgpu.h` only) and covered by `test_wgpu_vertex_instance.py`.
+
+An application gets faster by *calling* these; nothing wgpu-py does makes a
+consumer's draw loop use them. So this is a note for downstream -- pygfx and
+friends -- not a backlog item here.
 
 ## What is generated, and what is not
 
@@ -476,10 +486,10 @@ classic, have since been closed as well -- see "Raw data, and the properties a
 frame reads" above. No benchmark case is now slower than the implementation
 this replaces.
 
-What remains is genuinely open rather than deferred: the structural wins listed
-under "What would push it further" -- render bundles, `multi_draw_indirect`,
-batched setters. Those stop making one Python call per GPU command, which is
-the only order of magnitude left; per-call tuning is done.
+What remains is not work on this library. The only order of magnitude left is
+structural -- render bundles and `multi_draw_indirect` -- and both are already
+exposed and tested here; using them is a decision for the application. See
+"What would push it further, and who has to do it".
 
 wgpu-native's own extension structs (`WGPUShaderSourceGLSL` and the `*Extras`
 family) are declared only in `wgpu.h`, so they cannot come from `webgpu.json`.

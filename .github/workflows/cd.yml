@@ -54,6 +54,31 @@ jobs:
         uses: pypa/cibuildwheel@v2.21
         env:
           CIBW_ARCHS: ${{ matrix.archs }}
+      - name: Check the wheel tags
+        shell: bash
+        run: |
+            # An unrepaired Linux wheel is tagged `linux_x86_64`, which PyPI
+            # rejects outright -- and it would only be noticed at upload, after
+            # the tag is cut. Assert the platform tag here instead.
+            ls -la wheelhouse/
+            python - <<'PY'
+            import pathlib, sys
+            wheels = sorted(pathlib.Path("wheelhouse").glob("*.whl"))
+            assert wheels, "cibuildwheel produced no wheels"
+            expected = "${{ matrix.name }}".split()[0]
+            bad = []
+            for wheel in wheels:
+                tag = wheel.stem.split("-")[-1]
+                if expected == "linux" and not tag.startswith("manylinux"):
+                    bad.append(f"{wheel.name}: {tag} is not a manylinux tag")
+                if expected == "macos" and not tag.startswith("macosx"):
+                    bad.append(f"{wheel.name}: {tag} is not a macosx tag")
+            print("\n".join(w.name for w in wheels))
+            if bad:
+                sys.exit("\n".join(bad))
+            # Three interpreters per platform, and no more.
+            assert len(wheels) == 3, f"expected cp311/312/313, got {len(wheels)}"
+            PY
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.archs }}-${{ runner.os }}
@@ -64,6 +89,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Without this the submodule is an empty directory, and the sdist
+          # ships with no Rust sources at all -- so it builds nothing and the
+          # failure only shows up for whoever installs from source.
+          submodules: recursive
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -73,6 +103,29 @@ jobs:
             python -m pip install --upgrade pip build twine
             python -m build --sdist
             twine check dist/*
+      - name: Check the sdist can actually build
+        run: |
+            # The wheels are binary, so nothing else here would notice an sdist
+            # that is missing the sources it exists to carry.
+            python - <<'PY'
+            import pathlib, sys, tarfile
+            sdist = next(iter(pathlib.Path("dist").glob("*.tar.gz")))
+            names = tarfile.open(sdist).getnames()
+            required = [
+                "wgpu-native/Cargo.toml",
+                "wgpu-native/src/lib.rs",
+                "wgpu-native/ffi/wgpu.h",
+                "wgpu-native/ffi/webgpu-headers/webgpu.h",
+                "wgpu-native/ffi/webgpu-headers/webgpu.json",
+            ]
+            missing = [
+                r for r in required
+                if not any(n.endswith("/" + r) for n in names)
+            ]
+            if missing:
+                sys.exit(f"{sdist.name} is missing:\n  " + "\n  ".join(missing))
+            print(f"{sdist.name}: {len(names)} entries, sources present")
+            PY
       - uses: actions/upload-artifact@v4
         with:
           name: sdist
@@ -85,13 +138,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Every architecture a wheel is built for is installed and run here.
+        # An untested wheel is the whole risk of shipping a compiled binding:
+        # it is not the build that fails, it is the import on someone's machine.
         include:
           - name: windows amd64
             os: windows-latest
           - name: macos arm64
             os: macos-latest
+          - name: macos x86_64
+            os: macos-15-intel
           - name: linux x86_64
             os: ubuntu-latest
+          - name: linux aarch64
+            os: ubuntu-24.04-arm
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python
@@ -118,18 +178,35 @@ jobs:
           pip install numpy pytest
           # Leave the repo, so `import wgpu` cannot resolve to the source tree.
           pushd $HOME
-          python -c "
-          import wgpu
-          print('wgpu', wgpu.__version__)
-          import wgpu.backends.wgpu_native as native
-          print('wgpu-native', native.__version__)
+          python - <<'PY'
+          import os, sys, wgpu, wgpu.backends.wgpu_native as native
+
+          print("wgpu", wgpu.__version__, "/ wgpu-native", native.__version__)
+          # The whole point of these wheels: the extension is compiled in, not
+          # downloaded. A pure-Python fallback would still import cleanly.
+          import wgpu._native
+          assert wgpu._native.lib is not None
+          print("extension:", wgpu._native.__file__)
+
           adapter = wgpu.gpu.request_adapter_sync()
-          print('adapter', adapter.info['adapter_type'], adapter.info['backend_type'])
+          if adapter is None:
+              # Linux installs lavapipe above, so there we know one must exist.
+              # Elsewhere the runner's driver situation is not ours to promise,
+              # and a missing adapter is not a broken wheel.
+              if sys.platform.startswith("linux"):
+                  sys.exit("no adapter, but a software driver was installed")
+              print("no adapter on this runner; import and link verified")
+              raise SystemExit(0)
+
+          print("adapter:", adapter.summary)
           device = adapter.request_device_sync()
-          buf = device.create_buffer(size=256, usage='COPY_SRC|COPY_DST')
+          buf = device.create_buffer(size=256, usage="COPY_SRC|COPY_DST")
           assert buf.size == 256
-          print('ok')
-          "
+          # Exercise the compiled path end to end rather than just allocating.
+          device.queue.write_buffer(buf, 0, b"\xab" * 256)
+          assert bytes(device.queue.read_buffer(buf))[:4] == b"\xab" * 4
+          print("ok")
+          PY
           popd
 
   publish:

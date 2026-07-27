@@ -127,6 +127,39 @@ def test_native_struct_descriptors_match_the_header():
             assert descriptor.s_type, f"{name} chains but has no sType"
 
 
+def test_native_struct_descriptors_cover_every_field():
+    """The other direction: a field wgpu-native *adds* must not go unnoticed.
+
+    The test above catches a field that was renamed or removed, because the
+    descriptor still names it. It cannot catch a new one -- the descriptor
+    simply never mentions it, and the member goes out zeroed, which
+    wgpu-native reads as a real value rather than "not specified".
+
+    This is the whole reason these two structs can stay hand-written: with
+    both directions pinned, a submodule bump that changes them fails the build
+    instead of silently marshalling the wrong thing. Generating them from
+    ``wgpu.h`` would trade that for a parser that has to *infer* defaults and
+    optionality, which the C header does not state.
+    """
+    sys.path.insert(0, str(paths.REPO_ROOT))
+    from wgpu._native import ffi
+    from wgpu.backends.wgpu_native.native_structs import NATIVE_STRUCTS
+
+    for name, descriptor in NATIVE_STRUCTS.items():
+        declared = {m.c for m in descriptor.members}
+        declared |= {m.count_c for m in descriptor.members if m.count_c}
+        # ``chain`` is the extension mechanism itself, set by the builder from
+        # the descriptor's sType rather than by any member.
+        declared.add("chain")
+        actual = {f[0] for f in ffi.typeof(descriptor.c_name).fields}
+        unaccounted = actual - declared
+        assert not unaccounted, (
+            f"{name} ({descriptor.c_name}) has C fields no descriptor member "
+            f"covers: {sorted(unaccounted)}. They would be sent as zeros; add "
+            f"them to NATIVE_STRUCTS."
+        )
+
+
 def test_extras_do_not_call_unimplemented_functions():
     """Calling one of these aborts the process, so they must never be wrapped."""
     unimplemented = paths.unimplemented_functions()
