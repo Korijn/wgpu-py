@@ -453,11 +453,14 @@ class WgpuNativeInfoDiagnostics(DiagnosticsBase):
     """Provides metadata about the wgpu-native backend."""
 
     def get_dict(self):
-        # Get modules, or skip
+        # Imported here rather than read off ``sys.modules``: wgpu-native is
+        # compiled in, so this information always exists, and a diagnostic
+        # that reports "No data" depending on what someone happened to import
+        # first is worse than useless.
         try:
-            wgpu = sys.modules["wgpu"]
-            wgpu_native = wgpu.backends.wgpu_native
-        except (KeyError, AttributeError):  # no-cover
+            import wgpu
+            import wgpu.backends.wgpu_native as wgpu_native
+        except ImportError:  # no-cover
             return {}
 
         # Process lib path
@@ -495,6 +498,113 @@ class VersionDiagnostics(DiagnosticsBase):
         return info
 
 
+class WgpuNativeCountsDiagnostics(DiagnosticsBase):
+    """Object counts as wgpu-native itself sees them.
+
+    The counterpart to ``object_counts``, which counts the Python wrappers.
+    Comparing the two is how a leak is found: a Python object that is gone
+    while wgpu-native still holds the resource means a handle was never
+    released, and the reverse means something is being kept alive too long.
+
+    The object names come from ``WGPUHubReport``'s own fields rather than a
+    list written out here, so a submodule that adds a resource kind reports it
+    without anything changing.
+    """
+
+    def get_subscript(self):
+        return (
+            "    * a, k, r are allocated, kept and released, respectively.\n"
+            "    * Reported memory does not include buffer/texture data.\n"
+        )
+
+    def get_dict(self):
+        try:
+            from wgpu._native import ffi, lib
+        except ImportError:  # no-cover - the extension is always there
+            return {}
+
+        instance = _instance_handle()
+        if instance is None:
+            return {}  # nothing has been created yet, so nothing to count
+        report = ffi.new("WGPUGlobalReport *")
+        lib.wgpuGenerateReport(instance, report)
+
+        result = {}
+        # ``surfaces`` sits in the report's root rather than in the hub, which
+        # is why it is picked out by name -- it is the one that is not a hub
+        # field, not a special case wgpu-py invented.
+        entries = [("surfaces", report.surfaces, "")]
+        entries += [
+            (name, getattr(report.hub, name), "hub")
+            for name, _ in ffi.typeof("WGPUHubReport").fields
+        ]
+
+        for name, registry, where in entries:
+            # kept, not allocated: wgpu-core recycles slots, so allocated
+            # counts the high-water mark rather than what is live now.
+            count = int(registry.numKeptFromUser)
+            element_size = int(registry.elementSize)
+            result[_report_name(name)] = {
+                "count": count,
+                "mem": count * element_size,
+                "hub": {
+                    where: {
+                        "a": int(registry.numAllocated),
+                        "k": count,
+                        "r": int(registry.numReleasedFromUser),
+                        "el_size": element_size,
+                    }
+                },
+            }
+
+        result = {name: result[name] for name in sorted(result)}
+        result["total"] = {
+            key: sum(v.get(key, 0) for v in result.values()) for key in ("count", "mem")
+        }
+        return result
+
+
+#: wgpu-native's plural field names, as the class names wgpu-py reports.
+_REPORT_NAMES = {"surfaces": "CanvasContext"}
+
+
+def _report_name(name):
+    """``renderPipelines`` -> ``RenderPipeline``."""
+    try:
+        return _REPORT_NAMES[name]
+    except KeyError:
+        value = _REPORT_NAMES[name] = name[0].upper() + name[1:-1]
+        return value
+
+
+def _instance_handle():
+    from wgpu._runtime.api import get_api
+
+    return get_api().instance_handle
+
+
+def _live_object_counts():
+    """Read the per-class counters kept by ``wgpu._api.base.GPUHandle``.
+
+    Walking the class tree here is what lets the counting itself be a single
+    item store on a class attribute -- object creation is a hot path, and a
+    diagnostic nobody is reading should not be charging it for a dict of names.
+    """
+    try:
+        from wgpu._api.base import GPUHandle
+    except ImportError:  # no-cover
+        return {}
+
+    counts = {}
+    todo = [GPUHandle]
+    while todo:
+        cls = todo.pop()
+        todo.extend(cls.__subclasses__())
+        if cls._spec_name:
+            counts[cls.__name__] = cls._live[0]
+    return counts
+
+
 class ObjectCountDiagnostics(DiagnosticsBase):
     """Provides object counts and resource consumption, used in _classes.py."""
 
@@ -504,7 +614,8 @@ class ObjectCountDiagnostics(DiagnosticsBase):
 
     def get_dict(self):
         """Get diagnostics as a dict."""
-        object_counts = self.tracker.counts
+        object_counts = dict(self.tracker.counts)
+        object_counts.update(_live_object_counts())
         resource_mem = self.tracker.amounts
 
         # Collect counts
@@ -528,3 +639,4 @@ SystemDiagnostics("system")
 VersionDiagnostics("versions")
 WgpuNativeInfoDiagnostics("wgpu_native_info")
 ObjectCountDiagnostics("object_counts")
+WgpuNativeCountsDiagnostics("wgpu_native_counts")

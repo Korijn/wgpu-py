@@ -1,37 +1,6 @@
+"""Kept so ``wgpu.backends.wgpu_native`` keeps resolving.
+
+wgpu-py used to select a backend at runtime; there is only one now, statically
+linked into the package. The import path survives because downstream code --
+pygfx above all -- imports wgpu-native's extra features from it.
 """
-The backend implementations of the wgpu API.
-"""
-
-import sys
-
-from ..classes import GPU as _base_GPU  # noqa: N811
-
-
-def _register_backend(gpu):
-    """Backends call this to activate themselves.
-    It replaces ``wgpu.gpu`` with the ``gpu`` object from the backend.
-    """
-
-    root_namespace = sys.modules["wgpu"].__dict__
-    needed_attributes = (
-        "request_adapter_sync",
-        "request_adapter_async",
-        "wgsl_language_features",
-    )
-
-    # Check
-    for attr in needed_attributes:
-        if not (hasattr(gpu, attr)):
-            raise RuntimeError(
-                "The registered WGPU backend object must have attributes "
-                + ", ".join(f"'{a}'" for a in needed_attributes)
-                + f". The '{attr}' is missing."
-            )
-
-    # Only allow registering a backend once
-    if not isinstance(root_namespace["gpu"], _base_GPU):
-        raise RuntimeError("WGPU backend can only be set once.")
-
-    # Apply
-    root_namespace["gpu"] = gpu
-    return gpu

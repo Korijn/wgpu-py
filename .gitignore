@@ -126,3 +126,11 @@ venv.bak/
 
 # jetbrains idea
 .idea/
+# Compiled low-level cffi extension (built from the wgpu-native submodule).
+# The generated *Python* layer (wgpu/_generated/) is tracked on purpose so that
+# bumping the submodule produces a reviewable diff.
+wgpu/_native/_wgpu.*
+wgpu/_native/*.so
+wgpu/_native/*.o
+wgpu/_native/*.c
+bindgen/**/__pycache__/

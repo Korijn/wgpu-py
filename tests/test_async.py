@@ -12,7 +12,7 @@ from rendercanvas.raw import RawLoop
 import wgpu.utils
 from testutils import can_use_wgpu_lib, run_tests
 from wgpu import GPUDevice, MapMode, TextureFormat
-from wgpu._async import (
+from wgpu._api.promise import (
     GPUPromise as BaseGPUPromise,
     detect_current_call_soon_threadsafe,
     detect_current_async_lib,
@@ -816,6 +816,104 @@ async def make_pipeline_async():
     compute_pass.end()
     device.queue.submit([command_encoder.finish()])
     await device.queue.on_submitted_work_done_async()
+
+
+@mark.skipif(not can_use_wgpu_lib, reason="Needs wgpu lib")
+def test_then_fires_on_a_real_gpu_promise():
+    """then() on an actual wgpu-native operation, with nobody awaiting it.
+
+    Every other then() test above builds a GPUPromise by hand and resolves it
+    by hand, which exercises the chaining but never the half that has to come
+    from wgpu-native. That gap hid two real bugs at once: nothing drove the
+    event queue when no one was awaiting, so the completion callback never ran;
+    and then() constructed the chained promise positionally, which put the
+    user's callback in WgpuPromise's ``pump`` slot and left the handler unset.
+    Either one alone makes this test fail.
+    """
+
+    async def main():
+        device = wgpu.utils.get_default_device()
+        buffer = device.create_buffer(
+            size=64, usage=MapMode.READ | wgpu.BufferUsage.COPY_DST
+        )
+        fired = []
+        # Deliberately never awaited: then() is fire-and-forget.
+        buffer.map_async("READ").then(lambda result: fired.append(result))
+
+        deadline = time.perf_counter() + 5
+        while not fired and time.perf_counter() < deadline:
+            await asyncio.sleep(0.01)
+
+        assert fired, "then() callback never fired"
+        buffer.unmap()
+
+    asyncio.run(main())
+
+
+@mark.skipif(not can_use_wgpu_lib, reason="Needs wgpu lib")
+def test_then_keeps_the_event_pump():
+    """A promise from then() must still be usable in its own right."""
+
+    async def main():
+        device = wgpu.utils.get_default_device()
+        buffer = device.create_buffer(
+            size=64, usage=MapMode.READ | wgpu.BufferUsage.COPY_DST
+        )
+        promise = buffer.map_async("READ").then(lambda result: "chained")
+        assert await promise == "chained"
+        buffer.unmap()
+
+    asyncio.run(main())
+
+
+@mark.skipif(not can_use_wgpu_lib, reason="Needs wgpu lib")
+def test_poll_thread_only_runs_while_work_is_outstanding():
+    """An idle device must not spin: the thread sleeps until it has a token."""
+    device = wgpu.utils.get_default_device()
+    poller = device._poller
+
+    assert poller.is_alive()
+    assert not poller._token_ids, "idle device is holding a poll token"
+
+    buffer = device.create_buffer(
+        size=64, usage=MapMode.READ | wgpu.BufferUsage.COPY_DST
+    )
+    promise = buffer.map_async("READ")
+    # Ask the operation what it claimed, rather than looking at the thread's
+    # live set: the poll thread runs concurrently and a 64-byte map can be
+    # complete before the next line, so reading _token_ids here is a race.
+    token = promise._keep[-1]
+    assert token is not None, "an outstanding op did not claim the thread"
+    promise.sync_wait()
+    assert token.is_done(), "the token outlived the operation"
+    assert not poller._token_ids, "the thread is still held awake"
+    buffer.unmap()
+
+
+@mark.anyio
+async def test_pipeline_creation_async_is_answered_not_refused():
+    """wgpu-native declares createRenderPipelineAsync but does not implement it.
+
+    Calling the C function outright would abort the process, so the generated
+    body falls back to the synchronous sibling and hands back a resolved
+    promise -- which is what the spec says the async form means, and what the
+    examples' async setup path relies on.
+    """
+    device = wgpu.utils.get_default_device()
+    shader = device.create_shader_module(
+        code="@compute @workgroup_size(1) fn main() {}"
+    )
+    pipeline = await device.create_compute_pipeline_async(
+        layout="auto", compute={"module": shader, "entry_point": "main"}
+    )
+    assert isinstance(pipeline, wgpu.GPUComputePipeline)
+    # The blocking form has to work too, and give the same kind of object.
+    assert isinstance(
+        device.create_compute_pipeline(
+            layout="auto", compute={"module": shader, "entry_point": "main"}
+        ),
+        wgpu.GPUComputePipeline,
+    )
 
 
 if __name__ == "__main__":

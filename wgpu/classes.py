@@ -1,8 +1,7 @@
-"""
-The classes that make up the wgpu API.
-These can be accessed via ``wgpu.classes``,
-but are also available in the root wgpu namespace.
+"""The classes that make up the wgpu API.
+
+Available as ``wgpu.classes``, and also from the root ``wgpu`` namespace.
 """
 
-from ._classes import *  # noqa: F403
-from ._classes import __all__  # noqa: F401
+from wgpu._api import *  # noqa: F403
+from wgpu._api import __all__  # noqa: F401

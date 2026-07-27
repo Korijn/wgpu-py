@@ -22,6 +22,14 @@ if "is_test" in sys.argv:
         except ModuleNotFoundError:
             continue
         raise RuntimeError(module_name + " is not supposed to be importable.")
+
+    # Reach wgpu-native itself. It is statically linked into a cffi extension
+    # whose own dependency on _cffi_backend is made from C and so appears
+    # nowhere in the frozen import graph -- the one thing the hook has to add.
+    import wgpu.backends.wgpu_native as native
+
+    assert native.__version__, "wgpu-native did not report a version"
+    assert wgpu.gpu is native.gpu
 """
 
 

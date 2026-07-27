@@ -31,121 +31,104 @@ def test_get_wgpu_version():
     assert len(commit_sha) > 0
 
 
-def test_override_wgpu_lib_path():
-    # Current version
-    try:
-        old_path = wgpu.backends.wgpu_native.lib_path
-    except RuntimeError:
-        old_path = None
-
-    # Change it
-    old_env_var = os.environ.get("WGPU_LIB_PATH", None)
+def test_the_library_is_compiled_in():
+    # This used to set WGPU_LIB_PATH and check that the loader picked it up:
+    # the wheel shipped a prebuilt libwgpu_native.so alongside pure Python, and
+    # you could point it elsewhere. wgpu-native is now statically linked into a
+    # CPython extension, so there is no separate library to swap -- which is the
+    # point, since a wheel and its native library can no longer disagree about a
+    # version. What is checked is that the env var is genuinely inert.
+    old = os.environ.get("WGPU_LIB_PATH")
     os.environ["WGPU_LIB_PATH"] = "foo/bar"
-
-    # Check
-    assert wgpu.backends.wgpu_native._ffi.get_wgpu_lib_path() == "foo/bar"
-
-    # Change it back
-    if old_env_var is None:
-        os.environ.pop("WGPU_LIB_PATH")
-    else:
-        os.environ["WGPU_LIB_PATH"] = old_env_var
-
-    # Still the same as before?
     try:
-        path = wgpu.backends.wgpu_native._ffi.get_wgpu_lib_path()
-    except RuntimeError:
-        path = None
-    assert path == old_path
+        path = wgpu.backends.wgpu_native.lib_path
+        assert "foo/bar" not in path
+        assert os.path.isfile(path)
+        # It is the compiled extension itself, not a library beside it.
+        assert os.path.dirname(path) == os.path.dirname(wgpu._native.__file__)
+        assert os.path.basename(path).startswith("_wgpu.")
+    finally:
+        if old is None:
+            os.environ.pop("WGPU_LIB_PATH")
+        else:
+            os.environ["WGPU_LIB_PATH"] = old
 
 
-def test_tuple_from_tuple_or_dict():
-    func = wgpu.backends.wgpu_native._api._tuple_from_tuple_or_dict
+def _struct(name, mapping):
+    """Build a C struct the way every descriptor field is built, and read it back."""
+    from wgpu._runtime.api import get_api
 
-    # Test all values being required.
-    assert func([1, 2, 3], ("x", "y", "z")) == (1, 2, 3)
-    assert func({"y": 2, "z": 3, "x": 1}, ("x", "y", "z")) == (1, 2, 3)
-    assert func((10, 20), ("width", "height")) == (10, 20)
-    assert func({"width": 10, "height": 20}, ("width", "height")) == (10, 20)
+    ptr, _keep = get_api().invoker.structs.new(name, mapping)
+    return ptr
 
-    # Test having a default value
-    assert func([1, 2, 3], ("x", "y", "z"), (3,)) == (1, 2, 3)
-    assert func([1, 2], ("x", "y", "z"), (3,)) == (1, 2, 3)
-    assert func({"y": 2, "z": 3, "x": 1}, ("x", "y", "z"), (3,)) == (1, 2, 3)
-    assert func({"y": 2, "x": 1}, ("x", "y", "z"), (3,)) == (1, 2, 3)
-    assert func((), ("width", "height"), (10, 20)) == (10, 20)
-    assert func({}, ("width", "height"), (10, 20)) == (10, 20)
 
-    # Test that with dictionaries, you can elide values at the beginning, if we have them
-    assert func({"z": 5}, ("x", "y", "z"), (1, 2, 3)) == (1, 2, 5)
+# The four tests below used to call _tuple_from_tuple_or_dict and friends --
+# hand-written helpers that turned (10, 20) or {"width": 10} into a tuple. The
+# rules they encoded are now the generated struct descriptors plus the runtime
+# builder, which applies them to *every* struct rather than to the three that
+# had a helper. So the same rules are checked, through the thing that enforces
+# them.
+
+
+@mark.skipif(not can_use_wgpu_lib, reason="Needs wgpu lib")
+def test_struct_from_sequence_or_mapping():
+    # A sequence fills the members in declaration order ...
+    assert _struct("origin_3D", (1, 2, 3)).z == 3
+    # ... and a mapping by name, in any order, in any of the three spellings.
+    assert _struct("origin_3D", {"z": 3, "x": 1, "y": 2}).x == 1
+    assert (
+        _struct("extent_3D", {"depthOrArrayLayers": 4, "width": 1}).depthOrArrayLayers
+        == 4
+    )
+    assert (
+        _struct(
+            "extent_3D", {"depth-or-array-layers": 4, "width": 1}
+        ).depthOrArrayLayers
+        == 4
+    )
 
     with raises(TypeError):
-        func("not tuple/dict", ("x", "y"))
+        _struct("origin_3D", 42)  # neither a sequence nor a mapping
     with raises(ValueError):
-        func([1], ("x", "y"))
+        # More values than the struct has members
+        _struct("origin_3D", (1, 2, 3, 4))
     with raises(ValueError):
-        func([1, 2, 3], ("x", "y"))
-    with raises(ValueError):
-        assert func({"x": 1}, ("x", "y"))
-    with raises(ValueError):
-        # not enough defaults
-        func([1], ("x", "y", "z"), (2,))
-    with raises(ValueError):
-        # we can elide y, but we can't elide x
-        func({"y": 2}, ("x", "y"), (1,))
-    with raises(ValueError):
-        # Right number of arguments, but wrong keyword
-        assert func({"y": 2, "x": 1, "w": 10}, ("x", "y", "z"))
+        # Right number of values, wrong keyword
+        _struct("origin_3D", {"x": 1, "y": 2, "w": 3})
 
 
-def test_tuple_from_extent3d():
-    func = wgpu.backends.wgpu_native._api._tuple_from_extent3d
+@mark.skipif(not can_use_wgpu_lib, reason="Needs wgpu lib")
+def test_struct_defaults_and_required_members():
+    # An omitted member takes the default the Web IDL gives it ...
+    e = _struct("extent_3D", {"width": 10})
+    assert (e.width, e.height, e.depthOrArrayLayers) == (10, 1, 1)
+    e = _struct("extent_3D", [10, 20])
+    assert (e.width, e.height, e.depthOrArrayLayers) == (10, 20, 1)
+    o = _struct("origin_3D", {"z": 30})
+    assert (o.x, o.y, o.z) == (0, 0, 30)
 
-    assert func([10, 20, 30]) == (10, 20, 30)
-    assert func([10, 20]) == (10, 20, 1)
-    assert func([10]) == (10, 1, 1)
-    assert func({"width": 10, "height": 20, "depth_or_array_layers": 30}) == (
-        10,
-        20,
-        30,
-    )
-    assert func({"width": 10, "height": 20}) == (10, 20, 1)
-    assert func({"width": 10, "depth_or_array_layers": 30}) == (10, 1, 30)
+    # ... but a member the IDL marks *required* has no default to fall back on,
+    # and a zero would be a real value rather than an absence -- a zero-sized
+    # texture, a black clear colour -- so it has to be an error.
+    with raises(ValueError):
+        _struct("extent_3D", {"height": 20, "depth_or_array_layers": 30})
+    with raises(ValueError):
+        _struct("extent_3D", ())
+    with raises(ValueError):
+        _struct("color", (0.1, 0.2, 0.3))
+
+
+@mark.skipif(not can_use_wgpu_lib, reason="Needs wgpu lib")
+def test_struct_from_color():
+    c = _struct("color", (0.1, 0.2, 0.3, 0.4))
+    assert (c.r, c.g, c.b, c.a) == (0.1, 0.2, 0.3, 0.4)
+    c = _struct("color", {"r": 0.1, "g": 0.2, "b": 0.3, "a": 0.4})
+    assert (c.r, c.g, c.b, c.a) == (0.1, 0.2, 0.3, 0.4)
 
     with raises(ValueError):
-        func({"height": 20, "depth_or_array_layers": 30})  # width is required
+        _struct("color", (0.1, 0.2, 0.3, 0.4, 0.5))
     with raises(ValueError):
-        func(())
-    with raises(ValueError):
-        # typo in argument
-        func({"width": 10, "height": 20, "depth_or_arrray_layers": 30})
-
-
-def test_tuple_from_origin3d():
-    func = wgpu.backends.wgpu_native._api._tuple_from_origin3d
-
-    assert func({"origin": (1, 2, 3)}) == (1, 2, 3)
-    assert func({"origin": ()}) == (0, 0, 0)
-    assert func({}) == (0, 0, 0)
-    assert func({"origin": {"x": 10, "y": 20, "z": 30}}) == (10, 20, 30)
-    assert func({"origin": {"z": 30}}) == (0, 0, 30)
-
-    with raises(ValueError):
-        func({"origin": {"x": 10, "y": 20, "z": 30, "w": 40}})
-
-
-def test_tuple_from_color():
-    func = wgpu.backends.wgpu_native._api._tuple_from_color
-
-    assert func((0.1, 0.2, 0.3, 0.4)) == (0.1, 0.2, 0.3, 0.4)
-    assert func({"r": 0.1, "g": 0.2, "b": 0.3, "a": 0.4}) == (0.1, 0.2, 0.3, 0.4)
-
-    with raises(ValueError):
-        func((0.1, 0.2, 0.3))
-    with raises(ValueError):
-        func((0.1, 0.2, 0.3, 0.4, 0.5))
-    with raises(ValueError):
-        func({"r": 0.1, "g": 0.2, "b": 0.3, "w": 0.4})
+        _struct("color", {"r": 0.1, "g": 0.2, "b": 0.3, "w": 0.4})
 
 
 compute_shader_wgsl = """
@@ -319,23 +302,23 @@ def test_logging():
 
 @mark.skipif(not can_use_wgpu_lib, reason="Needs wgpu lib")
 def test_wgpu_native_tracer():
+    # API tracing used to write a replayable capture into a directory. wgpu
+    # removed the feature (gfx-rs/wgpu#5974) and wgpu-native's ``trace`` cargo
+    # feature is commented out until it returns, so there is nothing to enable
+    # at any layer. Asking for a trace must therefore fail loudly rather than
+    # silently write nothing -- and when upstream restores it, this is the
+    # reminder to wire it back up.
     tempdir = os.path.join(tempfile.gettempdir(), "wgpu-tracer-test")
+    shutil.rmtree(tempdir, ignore_errors=True)
     adapter = wgpu.utils.get_default_device().adapter
 
-    # Make empty
-    shutil.rmtree(tempdir, ignore_errors=True)
+    with raises(NotImplementedError) as info:
+        wgpu.backends.wgpu_native.request_device_sync(adapter, tempdir)
+    assert "wgpu-native" in str(info.value)
     assert not os.path.isdir(tempdir)
 
-    # Works!
-    wgpu.backends.wgpu_native.request_device_sync(adapter, tempdir)
-    assert os.path.isdir(tempdir)
-
-    # Make dir not empty
-    with open(os.path.join(tempdir, "stub.txt"), "wb"):
-        pass
-
-    # Still works, but produces warning
-    wgpu.backends.wgpu_native.request_device_sync(adapter, tempdir)
+    # Without a trace path it is just a device request, and still works.
+    assert wgpu.backends.wgpu_native.request_device_sync(adapter) is not None
 
 
 @mark.skipif(not can_use_wgpu_lib, reason="Needs wgpu lib")
@@ -359,9 +342,10 @@ def test_enumerate_adapters():
 @mark.skipif(not can_use_wgpu_lib, reason="Needs wgpu lib")
 def test_adapter_destroy():
     adapter = wgpu.gpu.request_adapter_sync(power_preference="high-performance")
-    assert adapter._internal is not None
+    # The handle used to be called _internal; releasing it clears it either way.
+    assert adapter._handle is not None
     adapter.__del__()
-    assert adapter._internal is None
+    assert adapter._handle is None
 
 
 @mark.skipif(not can_use_wgpu_lib, reason="Needs wgpu lib")
@@ -382,36 +366,35 @@ def test_adapter_by_name():
             os.environ["WGPUPY_WGPU_ADAPTER_NAME"] = ori
 
 
-def test_get_memoryview_and_address():
-    get_memoryview_and_address = (
-        wgpu.backends.wgpu_native._helpers.get_memoryview_and_address
-    )
+@mark.skipif(not can_use_wgpu_lib, reason="Needs wgpu lib")
+def test_any_buffer_protocol_object_can_be_uploaded():
+    # This used to test get_memoryview_and_address(), a helper that turned
+    # buffer-like data into a (memoryview, address) pair to hand to C -- taking
+    # some care, because a readonly buffer cannot go through ctypes without a
+    # copy. cffi's from_buffer does that job now, for readonly buffers too, so
+    # the helper is gone. The guarantee it existed for is not: anything
+    # supporting the buffer protocol can be uploaded, without a copy.
+    device = wgpu.utils.get_default_device()
 
-    data = b"bytes are readonly, but we can map it. Don't abuse this :)"
-    m, address = get_memoryview_and_address(data)
-    assert m.nbytes == len(data)
-    assert address > 0
+    readonly_array = np.array([1, 2, 3, 4], dtype=np.int32)
+    readonly_array.flags.writeable = False
 
-    data = bytearray(b"A bytearray works too")
-    m, address = get_memoryview_and_address(data)
-    assert m.nbytes == len(data)
-    assert address > 0
-
-    data = (ctypes.c_float * 100)()
-    m, address = get_memoryview_and_address(data)
-    assert m.nbytes == ctypes.sizeof(data)
-    assert address > 0
-
-    data = np.array([1, 2, 3, 4])
-    m, address = get_memoryview_and_address(data)
-    assert m.nbytes == data.nbytes
-    assert address > 0
-
-    data = np.array([1, 2, 3, 4])
-    data.flags.writeable = False
-    m, address = get_memoryview_and_address(data)
-    assert m.nbytes == data.nbytes
-    assert address > 0
+    for data in [
+        b"bytes are readonly, but we can still upload them",
+        bytearray(b"a bytearray works too"),
+        (ctypes.c_float * 100)(),
+        np.array([1, 2, 3, 4], dtype=np.int32),
+        readonly_array,
+        memoryview(b"and a memoryview of one"),
+    ]:
+        nbytes = memoryview(data).nbytes
+        # Round up: write_buffer needs a multiple of 4.
+        size = (nbytes + 3) // 4 * 4
+        buffer = device.create_buffer(
+            size=size, usage=wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.COPY_SRC
+        )
+        device.queue.write_buffer(buffer, 0, data, 0, nbytes - nbytes % 4)
+        device.queue.submit([])
 
 
 def are_features_wgpu_legal(features):

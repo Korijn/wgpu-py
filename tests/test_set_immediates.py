@@ -171,6 +171,61 @@ def test_render_bundle_immediates():
     assert all(result == expected_result)
 
 
+def test_compute_immediates():
+    """The compute encoder's setImmediates is a different C function.
+
+    The two tests above go through wgpuRenderPassEncoderSetImmediates and
+    wgpuRenderBundleEncoderSetImmediates; this is the third of the trio, and
+    the only one no other test reaches.
+    """
+    adapter = wgpu.gpu.request_adapter_sync(power_preference="high-performance")
+    device = adapter.request_device_sync(
+        required_features=["immediates"],
+        required_limits={"max-immediate-size": 16},
+    )
+    shader = device.create_shader_module(
+        code="""
+        struct Immediates { scale: u32, bias: u32 }
+        var<immediate> immediates: Immediates;
+        @group(0) @binding(0) var<storage, read_write> data: array<u32>;
+        @compute @workgroup_size(1)
+        fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+            data[gid.x] = data[gid.x] * immediates.scale + immediates.bias;
+        }
+        """
+    )
+    values = np.arange(COUNT, dtype=np.uint32)
+    buffer = device.create_buffer_with_data(data=values, usage="STORAGE|COPY_SRC")
+    bind_group_layout = device.create_bind_group_layout(
+        entries=[
+            {"binding": 0, "visibility": "COMPUTE", "buffer": {"type": "storage"}}
+        ],
+    )
+    bind_group = device.create_bind_group(
+        layout=bind_group_layout,
+        entries=[{"binding": 0, "resource": {"buffer": buffer}}],
+    )
+    pipeline = device.create_compute_pipeline(
+        layout=device.create_pipeline_layout(
+            bind_group_layouts=[bind_group_layout],
+            immediate_size=8,
+        ),
+        compute={"module": shader},
+    )
+
+    encoder = device.create_command_encoder()
+    this_pass = encoder.begin_compute_pass()
+    this_pass.set_pipeline(pipeline)
+    this_pass.set_bind_group(0, bind_group)
+    this_pass.set_immediates(0, np.array([10, 100], dtype=np.uint32))
+    this_pass.dispatch_workgroups(COUNT)
+    this_pass.end()
+    device.queue.submit([encoder.finish()])
+
+    result = np.frombuffer(device.queue.read_buffer(buffer), dtype=np.uint32)
+    assert all(result == values * 10 + 100)
+
+
 def test_bad_set_immediates():
     device, _pipeline, render_pass_descriptor = setup_pipeline()
     encoder = device.create_command_encoder()

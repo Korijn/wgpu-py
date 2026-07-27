@@ -1,37 +1,27 @@
-import os
-from typing import Sequence, Union
+"""Features wgpu-native offers beyond the WebGPU specification.
 
-from . import (
-    GPUAdapter,
-    GPUDevice,
-    GPUBuffer,
-    GPUCommandEncoder,
-    GPUComputePassEncoder,
-    GPURenderPassEncoder,
-    GPUQuerySet,
-)
-from ._api import (
-    enums,
-    logger,
-    structs,
-    new_struct_p,
-    to_c_string_view,
-    enum_str2int,
-)
-from ...enums import Enum
-from ._helpers import get_wgpu_instance
-from ..._coreutils import get_library_filename
-from ._ffi import lib, ffi
-from ._mappings import native_flags
+Everything here is non-standard: it will not work on the web, and it is not
+generated from ``webgpu.idl``, because the IDL does not describe it. The
+functions are thin wrappers over ``wgpu.h``, which the FFI layer already binds.
+"""
+
+from __future__ import annotations
+
+from wgpu._native import ffi as _ffi
+from wgpu._native import lib as _lib
+from wgpu._runtime.api import get_api
+from wgpu._runtime.enumbase import EnumType as _EnumType
+from wgpu._runtime.maps import EnumMap as _EnumMap
 
 
-# NOTE: these functions represent backend-specific extra API.
-# NOTE: changes to this module must be reflected in docs/backends.rst.
-# We don't use Sphinx automodule because this way the doc build do not
-# need to be able to load wgpu-native.
+class PipelineStatisticName(metaclass=_EnumType):
+    """The statistics a statistics query set can record.
 
+    Hand-written because neither spec describes pipeline statistics, but it
+    carries the same metaclass as the generated enums -- so it iterates, and
+    answers ``in``, exactly like every other one.
+    """
 
-class PipelineStatisticName(Enum):  # wgpu native
     VertexShaderInvocations = "vertex-shader-invocations"
     ClipperInvocations = "clipper-invocations"
     ClipperPrimitivesOut = "clipper-primitives-out"
@@ -39,254 +29,191 @@ class PipelineStatisticName(Enum):  # wgpu native
     ComputeShaderInvocations = "compute-shader-invocations"
 
 
-def request_device_sync(
-    adapter: GPUAdapter,
-    trace_path: str,
-    *,
-    label: str = "",
-    required_features: Sequence[enums.FeatureName] = (),
-    required_limits: dict[str, int] | None = None,
-    default_queue: structs.QueueDescriptorStruct | None = None,
-) -> GPUDevice:
-    """Write a trace of all commands to a file so it can be reproduced
-    elsewhere. The trace is cross-platform!
+# An EnumMap rather than a plain dict, so these names take the same three
+# spellings every other enum does -- hyphen-, snake- and CamelCase alike.
+_PIPELINE_STATISTICS = _EnumMap(
+    "PipelineStatisticName",
+    {
+        PipelineStatisticName.VertexShaderInvocations: 0,
+        PipelineStatisticName.ClipperInvocations: 1,
+        PipelineStatisticName.ClipperPrimitivesOut: 2,
+        PipelineStatisticName.FragmentShaderInvocations: 3,
+        PipelineStatisticName.ComputeShaderInvocations: 4,
+    },
+)
+
+
+# -- timestamps and pipeline statistics --------------------------------------
+
+
+#: One C function per encoder kind -- they take different handle types, so the
+#: right one is chosen by what was passed in rather than by an argument.
+_WRITE_TIMESTAMP = {
+    "command_encoder": "wgpuCommandEncoderWriteTimestamp",
+    "compute_pass_encoder": "wgpuComputePassEncoderWriteTimestamp",
+    "render_pass_encoder": "wgpuRenderPassEncoderWriteTimestamp",
+}
+
+
+def write_timestamp(encoder, query_set, query_index):
+    """Write a timestamp into ``query_set`` at ``query_index``.
+
+    Unlike the standard timestamp writes, this can be issued anywhere in a
+    command encoder or inside a compute or render pass, rather than only at a
+    pass boundary. Which of those you have decides which C function applies.
     """
-    required_limits = {} if required_limits is None else required_limits
-    default_queue = {} if default_queue is None else default_queue
-    if not os.path.isdir(trace_path):
-        os.makedirs(trace_path, exist_ok=True)
-    elif os.listdir(trace_path):
-        logger.warning(f"Trace directory not empty: {trace_path}")
-    promise = adapter._request_device_async(
-        label, required_features, required_limits, default_queue, trace_path
+    c_func = _WRITE_TIMESTAMP.get(encoder._spec_name)
+    if c_func is None:
+        raise TypeError(
+            f"write_timestamp() takes a command encoder or a pass encoder, "
+            f"not {type(encoder).__name__}"
+        )
+    getattr(_lib, c_func)(encoder._handle, query_set._handle, int(query_index))
+
+
+def create_statistics_query_set(device, *, label="", count, statistics):
+    """Create a query set that records pipeline statistics."""
+    # The map raises for an unknown name, naming the valid ones.
+    values = [_PIPELINE_STATISTICS[s] for s in statistics]
+
+    api = get_api()
+    stats = _ffi.new("WGPUPipelineStatisticName[]", values)
+    ext = _ffi.new("WGPUQuerySetDescriptorExtras *")
+    ext.chain.sType = _lib.WGPUSType_QuerySetDescriptorExtras
+    ext.pipelineStatistics = stats
+    ext.pipelineStatisticCount = len(values)
+
+    descriptor = _ffi.new("WGPUQuerySetDescriptor *")
+    descriptor.type = _lib.WGPUNativeQueryType_PipelineStatistics
+    descriptor.count = int(count)
+    descriptor.nextInChain = _ffi.addressof(ext.chain)
+    if label:
+        data = _ffi.new("char[]", label.encode())
+        descriptor.label.data = data
+        descriptor.label.length = len(label.encode())
+        _keep = data
+    handle = _lib.wgpuDeviceCreateQuerySet(device._handle, descriptor)
+    api.errors.raise_if_error()
+    return api.registry["query_set"](handle, device._pump, device)
+
+
+def begin_pipeline_statistics_query(pass_encoder, query_set, query_index):
+    """Start recording pipeline statistics into ``query_set``."""
+    func = _statistics_func(pass_encoder, "BeginPipelineStatisticsQuery")
+    func(pass_encoder._handle, query_set._handle, int(query_index))
+
+
+def end_pipeline_statistics_query(pass_encoder):
+    """Stop recording pipeline statistics."""
+    func = _statistics_func(pass_encoder, "EndPipelineStatisticsQuery")
+    func(pass_encoder._handle)
+
+
+def _statistics_func(pass_encoder, suffix):
+    kind = {
+        "compute_pass_encoder": "ComputePassEncoder",
+        "render_pass_encoder": "RenderPassEncoder",
+    }.get(pass_encoder._spec_name)
+    if kind is None:
+        raise TypeError(
+            f"pipeline statistics need a compute or render pass, "
+            f"got {type(pass_encoder).__name__}"
+        )
+    return getattr(_lib, f"wgpu{kind}{suffix}")
+
+
+# -- multi-draw --------------------------------------------------------------
+
+
+def multi_draw_indirect(render_pass_encoder, buffer, *, offset=0, count):
+    """Issue ``count`` indirect draws from one buffer, in a single call.
+
+    This is the point of it: one call instead of ``count`` calls, so the draw
+    parameters never make the trip through Python.
+    """
+    _lib.wgpuRenderPassEncoderMultiDrawIndirect(
+        render_pass_encoder._handle, buffer._handle, int(offset), int(count)
     )
-    return promise.sync_wait()
 
 
-# Backwards compat for deprecated function
-def request_device(*args, **kwargs):
-    logger.warning(
-        "WGPU: wgpu.backends.wgpu_native.request_device() is deprecated, use request_device_sync() instead."
+def multi_draw_indexed_indirect(render_pass_encoder, buffer, *, offset=0, count):
+    """Indexed form of `multi_draw_indirect()`."""
+    _lib.wgpuRenderPassEncoderMultiDrawIndexedIndirect(
+        render_pass_encoder._handle, buffer._handle, int(offset), int(count)
     )
-    return request_device_sync(*args, **kwargs)
-
-
-def multi_draw_indirect(
-    render_pass_encoder: GPURenderPassEncoder,
-    buffer: GPUBuffer,
-    *,
-    offset: int = 0,
-    count: int,
-):
-    """
-    This is equivalent to
-    for i in range(count):
-        render_pass_encoder.draw(buffer, offset + i * 16)
-
-    You must enable the feature "multi-draw-indirect" to use this function.
-    """
-    render_pass_encoder._multi_draw_indirect(buffer, offset, count)
-
-
-def multi_draw_indexed_indirect(
-    render_pass_encoder: GPURenderPassEncoder,
-    buffer: GPUBuffer,
-    *,
-    offset: int = 0,
-    count: int,
-):
-    """
-    This is equivalent to
-
-    for i in range(count):
-        render_pass_encoder.draw_indexed(buffer, offset + i * 20)
-
-    You must enable the feature "multi-draw-indirect" to use this function.
-    """
-    render_pass_encoder._multi_draw_indexed_indirect(buffer, offset, count)
 
 
 def multi_draw_indirect_count(
-    render_pass_encoder: GPURenderPassEncoder,
-    buffer: GPUBuffer,
+    render_pass_encoder,
+    buffer,
     *,
-    offset: int = 0,
-    count_buffer: GPUBuffer,
-    count_buffer_offset: int = 0,
-    max_count: int,
+    offset=0,
+    count_buffer,
+    count_buffer_offset=0,
+    max_count,
 ):
-    """
-    This is equivalent to:
-
-    count = min(<u32 at offset count_buffer_offset of count_buffer>, max_count)
-    for i in range(count):
-        render_pass_encoder.draw(buffer, offset + i * 16)
-
-    You must enable the feature "multi-draw-indirect-count" to use this function.
-    """
-    render_pass_encoder._multi_draw_indirect_count(
-        buffer, offset, count_buffer, count_buffer_offset, max_count
+    """Like `multi_draw_indirect()`, with the draw count read from the GPU."""
+    _lib.wgpuRenderPassEncoderMultiDrawIndirectCount(
+        render_pass_encoder._handle,
+        buffer._handle,
+        int(offset),
+        count_buffer._handle,
+        int(count_buffer_offset),
+        int(max_count),
     )
 
 
 def multi_draw_indexed_indirect_count(
-    render_pass_encoder: GPURenderPassEncoder,
-    buffer: GPUBuffer,
+    render_pass_encoder,
+    buffer,
     *,
-    offset: int = 0,
-    count_buffer: GPUBuffer,
-    count_buffer_offset: int = 0,
-    max_count: int,
+    offset=0,
+    count_buffer,
+    count_buffer_offset=0,
+    max_count,
 ):
-    """
-    This is equivalent to:
-
-    count = min(<u32 at offset count_buffer_offset of count_buffer>, max_count)
-    for i in range(count):
-        render_pass_encoder.draw_indexed(buffer, offset + i * 20)
-
-    You must enable the feature "multi-draw-indirect-count" to use this function.
-    """
-    render_pass_encoder._multi_draw_indexed_indirect_count(
-        buffer, offset, count_buffer, count_buffer_offset, max_count
+    """Indexed form of `multi_draw_indirect_count()`."""
+    _lib.wgpuRenderPassEncoderMultiDrawIndexedIndirectCount(
+        render_pass_encoder._handle,
+        buffer._handle,
+        int(offset),
+        count_buffer._handle,
+        int(count_buffer_offset),
+        int(max_count),
     )
 
 
-def create_statistics_query_set(device, *, label="", count: int, statistics):
+# -- misc --------------------------------------------------------------------
+
+
+def enumerate_adapters(instance=None):
+    """Every adapter wgpu-native can see, not just the one it would pick."""
+    import wgpu
+
+    api = get_api()
+    inst = instance or wgpu.gpu._inst
+    n = _lib.wgpuInstanceEnumerateAdapters(inst._handle, _ffi.NULL, _ffi.NULL)
+    if not n:
+        return []
+    handles = _ffi.new("WGPUAdapter[]", n)
+    _lib.wgpuInstanceEnumerateAdapters(inst._handle, _ffi.NULL, handles)
+    cls = api.registry["adapter"]
+    return [cls(handles[i], inst._pump, inst) for i in range(n)]
+
+
+def request_device_sync(adapter, trace_path=None, **kwargs):
+    """Request a device. ``trace_path`` is accepted but cannot be honoured.
+
+    API tracing was removed from wgpu itself (gfx-rs/wgpu#5974), and
+    wgpu-native's ``trace`` cargo feature is commented out waiting for it to
+    come back -- so there is nothing to enable here, at any layer. The argument
+    is kept, and refuses loudly rather than quietly writing nothing, so code
+    that asks for a trace finds out that it will not get one.
     """
-    Create a query set that can collect the specified pipeline statistics.
-    You must enable the feature "pipeline-statitistics_query" to collect pipeline
-    statistics.
-    """
-    return device._create_statistics_query_set(label, count, statistics)
-
-
-def begin_pipeline_statistics_query(
-    encoder: GPURenderPassEncoder | GPUComputePassEncoder,
-    query_set: GPUQuerySet,
-    query_index: int,
-):
-    print(encoder, type(encoder))
-    assert isinstance(encoder, (GPURenderPassEncoder, GPUComputePassEncoder))
-    encoder._begin_pipeline_statistics_query(query_set, query_index)
-
-
-def end_pipeline_statistics_query(
-    encoder: GPURenderPassEncoder | GPUComputePassEncoder,
-):
-    assert isinstance(encoder, (GPURenderPassEncoder, GPUComputePassEncoder))
-    encoder._end_pipeline_statistics_query()
-
-
-def write_timestamp(
-    encoder: GPURenderPassEncoder | GPUComputePassEncoder | GPUCommandEncoder,
-    query_set: GPUQuerySet,
-    query_index: int,
-):
-    assert isinstance(
-        encoder, (GPURenderPassEncoder, GPUComputePassEncoder, GPUCommandEncoder)
-    )
-    encoder._write_timestamp(query_set, query_index)
-
-
-def set_instance_extras(
-    backends: Sequence[str] = ("All",),
-    flags: Sequence[str] = ("Default",),
-    dx12_compiler="fxc",
-    gles3_minor_version="Atomic",
-    fence_behavior="Normal",
-    dxc_path: Union[os.PathLike, None] = None,
-    dxc_max_shader_model: float = 6.5,
-    budget_for_device_creation: Union[int, None] = None,
-    budget_for_device_loss: Union[int, None] = None,
-):
-    """
-    Sets the global instance with extras. Needs to be called before instance is created (in enumerate_adapters or request_adapter).
-    Most of these options are for specific backends, and might not create an instance or crash when used in the wrong combinations.
-    Args:
-        backends: bitflags as list[str], which backends to enable on the instance level. Defaults to ``["All"]``.
-        flags: bitflags as list[str], for debugging the instance and compiler. Defaults to ``["Default"]``.
-        dx12_compiler: enum/str, either "Fxc", "Dxc" or "Undefined". Defaults to "Fxc" same as "Undefined". Dxc requires additional library files.
-        gles3_minor_version: enum/int, 0, 1 or 2. Defaults to "Atomic" (handled by driver).
-        fence_behavior: enum/int, "Normal" or "AutoFinish". Defaults to "Normal".
-        dxc_path: Path to the dxcompiler.dll file, if not provided or `None`, will try to load from wgpu/resources.
-        dxc_max_shader_model: float between 6.0 and 6.7, the maximum shader model to use with DXC. Defaults to 6.5.
-        budget_for_device_creation: Optional[int], between 0 and 100, to specify memory budget threshold for when creating resources (buffer, textures...) will fail. Defaults to None.
-        budget_for_device_loss: Optional[int], between 0 and 100, to specify memory budget threshold when the device will be lost. Defaults to None.
-    """
-    # TODO document and explain, add examples
-
-    backend_bitflags = 0
-    for backend in backends:
-        # there will be KeyErrors and no fallback to warn the user.
-        backend_bitflags |= native_flags["InstanceBackend." + backend]
-
-    flag_bitflags = 0
-    for flag in flags:
-        flag_bitflags |= native_flags["InstanceFlag." + flag]
-
-    c_dx12_compiler = enum_str2int["Dx12Compiler"].get(
-        dx12_compiler.capitalize(), enum_str2int["Dx12Compiler"]["Undefined"]
-    )
-    # https://docs.rs/wgpu/latest/wgpu/enum.Dx12Compiler.html#variant.DynamicDxc #explains the idea, will improve in the future.
-    if (
-        c_dx12_compiler == enum_str2int["Dx12Compiler"]["Dxc"] and not dxc_path
-    ):  # or os.path.exists(dxc_path)): # this check errors with None as default. but we can't have empty strings.
-        # if dxc is specified but no paths are provided, there will be a panic about static-dxc, so maybe we check against that.
-        try:
-            dxc_path = get_library_filename("dxcompiler.dll")
-        except RuntimeError as e:
-            # here we couldn't load the libs from wgpu/resources... so we assume the user doesn't have them.
-            # TODO: explain user to add DXC manually or provide a script/package it? (in the future)
-            logger.warning(
-                f"could not load .dll files for DXC from /resource: {e}.\n Please provide a path manually which can panic. Falling back to FXC"
-            )
-            c_dx12_compiler = enum_str2int["Dx12Compiler"]["Fxc"]
-
-    # https://docs.rs/wgpu/latest/wgpu/enum.Gles3MinorVersion.html
-    if gles3_minor_version[-1].isdigit():
-        gles3_minor_version = (
-            int(gles3_minor_version[-1]) + 1
-        )  # hack as the last char easily maps to the enum.
-    elif isinstance(gles3_minor_version, str):
-        gles3_minor_version = 0  # likely means atomic
-
-    # https://docs.rs/wgpu/latest/wgpu/enum.GlFenceBehavior.html
-    fence_behavior_map = {
-        "Normal": 0,  # WGPUGLFenceBehavior_Normal
-        "AutoFinish": 1,  # WGPUGLFenceBehavior_AutoFinish
-    }
-    fence_behavior = fence_behavior_map.get(fence_behavior, 0)
-
-    # hack as only version 6.0..6.7 are supported and enum mapping fits.
-    c_max_shader_model = int((dxc_max_shader_model - 6.0) * 1.0)
-
-    # https://docs.rs/wgpu/latest/wgpu/struct.MemoryBudgetThresholds.html
-    c_budget_creation = (
-        ffi.new("uint8_t *", budget_for_device_creation)
-        if budget_for_device_creation is not None
-        else ffi.NULL
-    )
-    c_budget_loss = (
-        ffi.new("uint8_t *", budget_for_device_loss)
-        if budget_for_device_loss is not None
-        else ffi.NULL
-    )
-
-    # H: chain: WGPUChainedStruct, backends: WGPUInstanceBackend/int, flags: WGPUInstanceFlag/int, dx12ShaderCompiler: WGPUDx12Compiler, gles3MinorVersion: WGPUGles3MinorVersion, glFenceBehaviour: WGPUGLFenceBehaviour, dxcPath: WGPUStringView, dxcMaxShaderModel: WGPUDxcMaxShaderModel, const uint8_t* budgetForDeviceCreation, const uint8_t* budgetForDeviceLoss
-    c_extras = new_struct_p(
-        "WGPUInstanceExtras *",
-        # not used: chain
-        backends=backend_bitflags,
-        flags=flag_bitflags,
-        dx12ShaderCompiler=c_dx12_compiler,
-        gles3MinorVersion=gles3_minor_version,
-        glFenceBehaviour=fence_behavior,
-        dxcPath=to_c_string_view(dxc_path),
-        dxcMaxShaderModel=c_max_shader_model,
-        budgetForDeviceCreation=c_budget_creation,
-        budgetForDeviceLoss=c_budget_loss,
-    )
-
-    c_extras.chain.sType = lib.WGPUSType_InstanceExtras
-    get_wgpu_instance(extras=c_extras)  # this sets a global
+    if trace_path:
+        raise NotImplementedError(
+            "wgpu-native cannot write API traces: the feature was removed from "
+            "wgpu upstream (gfx-rs/wgpu#5974) and is commented out in "
+            "wgpu-native's Cargo.toml until it returns."
+        )
+    return adapter.request_device_sync(**kwargs)

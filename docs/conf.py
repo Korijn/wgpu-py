@@ -116,7 +116,10 @@ for module, hide_class_signature in [(wgpu.classes, True)]:
                     method.__code__.co_argcount == 1
                     and method.__code__.co_kwonlyargcount > 0
                 ):
-                    sig = method.__name__ + "(**parameters)"
+                    # Marked up as a literal: bare ** is an RST
+                    # strong start-string, and the docs build
+                    # treats warnings as errors.
+                    sig = f"``{method.__name__}(**parameters)``"
                     docs = sig + "\n\n        " + docs
                 method.__doc__ = docs or None
 

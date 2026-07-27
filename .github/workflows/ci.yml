@@ -5,11 +5,15 @@ on:
   push:
     branches:
       - main
+      - master
+      - dev
     tags:
       - 'v*'
+  # Deliberately unfiltered. This repo is a fork: master tracks upstream and
+  # dev is the integration branch, so pinning the filter to one branch name
+  # silently disables CI the moment a pull request targets the other one --
+  # which is exactly what happened.
   pull_request:
-    branches:
-      - main
 
 jobs:
 
@@ -38,36 +42,73 @@ jobs:
 
   test-codegen-build:
     name: Test Codegen
-    timeout-minutes: 5
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
     steps:
     - uses: actions/checkout@v4
+      with:
+        # The binding is compiled from the submodule.
+        submodules: recursive
+        # The generator records the wgpu-native version, which it reads with
+        # `git describe` in the submodule. The default shallow checkout brings
+        # no tags along, so there would be nothing to describe -- and the only
+        # symptom is this job's diff check failing on that one line.
+        fetch-depth: 0
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Cache the Rust build
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          wgpu-native/target
+        key: wgpu-native-${{ runner.os }}-${{ hashFiles('wgpu-native/Cargo.lock') }}
+    - name: Install a software GPU driver
+      run: |
+        sudo apt-get update -y -qq
+        sudo apt install -y mesa-vulkan-drivers
     - name: Install dependencies
       run: |
           python -m pip install --upgrade pip
           pip install -U -e .[codegen]
-    - name: Test codegen
+    - name: Test the generator
       run: |
-          pytest -v codegen
+          pytest -v bindgen/tests
+    - name: The committed output must match a fresh run
+      run: |
+          python -m bindgen.generate
+          python -m bindgen.genapi
+          git diff --exit-code -- wgpu/_generated \
+            || (echo "::error::wgpu/_generated is stale; re-run the generator" && exit 1)
 
   test-minimal-import-build:
     name: Test Imports
-    timeout-minutes: 5
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
     steps:
     - uses: actions/checkout@v4
+      with:
+        # The binding is compiled from the submodule.
+        submodules: recursive
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Cache the Rust build
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          wgpu-native/target
+        key: wgpu-native-${{ runner.os }}-${{ hashFiles('wgpu-native/Cargo.lock') }}
     - name: Install dependencies
       run: |
           python -m pip install --upgrade pip
@@ -80,16 +121,27 @@ jobs:
 
   docs-build:
     name: Test Docs
-    timeout-minutes: 5
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
     steps:
     - uses: actions/checkout@v4
+      with:
+        # The binding is compiled from the submodule.
+        submodules: recursive
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Cache the Rust build
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          wgpu-native/target
+        key: wgpu-native-${{ runner.os }}-${{ hashFiles('wgpu-native/Cargo.lock') }}
     - name: Install dev dependencies
       run: |
           python -m pip install --upgrade pip
@@ -101,16 +153,27 @@ jobs:
 
   test-examples-build:
     name: Test Examples
-    timeout-minutes: 10
+    timeout-minutes: 40
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
     steps:
     - uses: actions/checkout@v4
+      with:
+        # The binding is compiled from the submodule.
+        submodules: recursive
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Cache the Rust build
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          wgpu-native/target
+        key: wgpu-native-${{ runner.os }}-${{ hashFiles('wgpu-native/Cargo.lock') }}
     - name: Install llvmpipe and lavapipe for offscreen canvas
       run: |
         sudo apt-get update -y -qq
@@ -127,16 +190,27 @@ jobs:
 
   test-pyinstaller-build:
     name: Test PyInstaller
-    timeout-minutes: 5
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
     steps:
     - uses: actions/checkout@v4
+      with:
+        # The binding is compiled from the submodule.
+        submodules: recursive
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Cache the Rust build
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          wgpu-native/target
+        key: wgpu-native-${{ runner.os }}-${{ hashFiles('wgpu-native/Cargo.lock') }}
     - name: Install dependencies
       run: |
           python -m pip install --upgrade pip
@@ -150,7 +224,7 @@ jobs:
 
   test-builds:
     name: ${{ matrix.name }}
-    timeout-minutes: 5
+    timeout-minutes: 40
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -173,10 +247,21 @@ jobs:
             pyversion: 'pypy3.11'
     steps:
     - uses: actions/checkout@v4
+      with:
+        # The binding is compiled from the submodule.
+        submodules: recursive
     - name: Set up Python ${{ matrix.pyversion }}
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.pyversion }}
+    - name: Cache the Rust build
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          wgpu-native/target
+        key: wgpu-native-${{ runner.os }}-${{ hashFiles('wgpu-native/Cargo.lock') }}
     - name: Install llvmpipe and lavapipe for offscreen canvas
       if: matrix.os == 'ubuntu-latest'
       run: |

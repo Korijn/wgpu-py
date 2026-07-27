@@ -5,7 +5,7 @@ from dataclasses import fields
 
 import wgpu
 
-from pytest import raises, mark
+from pytest import mark
 from testutils import run_tests, can_use_wgpu_lib
 
 
@@ -20,12 +20,16 @@ def test_basic_api():
     assert wgpu.gpu.request_adapter_sync
     assert wgpu.gpu.request_adapter_async
 
-    code1 = wgpu.GPU.request_adapter_sync.__code__
-    code2 = wgpu.GPU.request_adapter_async.__code__
-    varnames1 = set(code1.co_varnames) - {"gpu", "promise", "loop"}
-    varnames2 = set(code2.co_varnames) - {"gpu", "promise", "loop"}
-    # nargs1 = code1.co_argcount + code1.co_kwonlyargcount
-    assert varnames1 == varnames2
+    # The two forms must take the same arguments. This used to compare
+    # co_varnames, which also picks up local variables -- so it depended on how
+    # each body happened to be written. The signature is what the test was
+    # after, and asking for it directly is both stricter (it compares defaults
+    # and kinds too) and immune to a refactor of either body.
+    import inspect
+
+    sig1 = inspect.signature(wgpu.GPU.request_adapter_sync)
+    sig2 = inspect.signature(wgpu.GPU.request_adapter_async)
+    assert sig1.parameters == sig2.parameters
 
     assert repr(wgpu.classes.GPU()).startswith(
         "<wgpu.GPU "
@@ -98,27 +102,31 @@ def test_enums_and_flags_and_structs():
     assert "required_features: Sequence[enums.FeatureNameEnum] = ()" in r
 
 
+@mark.skipif(not can_use_wgpu_lib, reason="Needs wgpu lib")
 def test_base_wgpu_api():
-    # Fake a device and an adapter
-    adapter = wgpu.GPUAdapter(None, set(), {}, wgpu.GPUAdapterInfo({}))
-    queue = wgpu.GPUQueue("", None, None)
-    device = wgpu.GPUDevice("device08", -1, adapter, {42, 43}, {}, queue)
+    # This used to build an adapter, a queue and a device out of nothing, by
+    # passing their features and limits to the constructor. There is no longer
+    # anything to pass: an object *is* a handle wgpu-native owns, and its
+    # features and limits are read back from it. So the same properties are
+    # checked, on real objects.
+    adapter = wgpu.gpu.request_adapter_sync()
+    device = adapter.request_device_sync(label="device08")
+    queue = device.queue
 
     assert queue._device is device
 
     assert isinstance(adapter.features, set)
-    assert adapter.features == set()
     assert isinstance(adapter.limits, dict)
-    assert set(device.limits.keys()) == set()
+    assert isinstance(device.features, set)
+    assert set(device.limits.keys())
 
     assert isinstance(device, wgpu.GPUObjectBase)
     assert device.label == "device08"
-    assert device.features == {42, 43}
     assert hex(id(device)) in repr(device)
     assert device.label in repr(device)
 
-    # Check ids (assuming no other thread is creating ids)
-    assert device.uid == queue.uid + 1
+    # Every object gets a distinct, increasing id
+    assert device.uid < queue.uid
 
 
 @mark.skipif(not can_use_wgpu_lib, reason="Needs wgpu lib")
@@ -137,10 +145,19 @@ def test_backend_is_selected_automatically():
 
 
 def test_that_we_know_how_our_api_differs():
-    doc = wgpu._classes.apidiff.__doc__
-    assert isinstance(doc, str)
-    assert "GPUBuffer.get_mapped_range" in doc
-    assert "GPUDevice.create_buffer_with_data" in doc
+    # The differences from the web API used to be collected by an ``apidiff``
+    # decorator and reported through its docstring. They are now the explicit
+    # attachment block at the bottom of wgpu/_api/__init__.py -- same purpose,
+    # one place to read them off, except that the lines *are* the wiring rather
+    # than a description of it, so they cannot fall out of date.
+    import inspect
+
+    from wgpu import _api
+
+    source = inspect.getsource(_api)
+    assert "GPUBuffer.read_mapped" in source
+    assert "GPUDevice.create_buffer_with_data" in source
+    assert _api.__doc__ and "differ" in _api.__doc__
 
 
 def test_that_all_docstrings_are_there():
@@ -189,39 +206,39 @@ def test_do_not_import_utils_submodules():
     assert out.strip().endswith("False"), out
 
 
-def test_register_backend_fails():
-    class GPU:
-        pass
+def test_there_is_exactly_one_backend():
+    # wgpu-py used to pick a backend at runtime, and ``_register_backend``
+    # guarded that choice: the wrong shape of object, or a second registration,
+    # was a RuntimeError. There is nothing left to choose -- wgpu-native is
+    # compiled into the package -- so what is checked now is that the import
+    # path downstream code uses still resolves, and that the entrypoint is the
+    # real one rather than something that could be swapped underneath it.
+    import wgpu.backends.wgpu_native
 
-    fake_gpu = GPU()
+    assert wgpu.backends.wgpu_native is sys.modules["wgpu.backends.wgpu_native"]
+    assert isinstance(wgpu.gpu, wgpu.GPU)
+    assert wgpu.backends.wgpu_native.GPUDevice is wgpu.GPUDevice
 
-    ori_gpu = wgpu.gpu
-    try:
-        wgpu.gpu = wgpu.classes.GPU()
 
-        with raises(RuntimeError):
-            wgpu.backends._register_backend("foo")
-        with raises(RuntimeError):
-            wgpu.backends._register_backend(fake_gpu)
+def test_the_backend_modules_still_expose_gpu():
+    # ``auto`` reads ``module.gpu`` off whichever backend it picks, so a backend
+    # module that stopped exporting it makes the import itself raise -- which is
+    # how this went unnoticed: nothing but PyInstaller's frozen app imports
+    # ``auto``, and the failure only shows up there.
+    import wgpu.backends.auto
+    import wgpu.backends.wgpu_native
 
-        fake_gpu.request_adapter = lambda: None
-        with raises(RuntimeError):
-            wgpu.backends._register_backend(fake_gpu)
+    assert wgpu.backends.auto.gpu is wgpu.gpu
+    assert wgpu.backends.wgpu_native.gpu is wgpu.gpu
 
-        fake_gpu.request_adapter_sync = lambda: None
-        fake_gpu.request_adapter_async = lambda: None
-        fake_gpu.wgsl_language_features = set()
-        wgpu.backends._register_backend(fake_gpu)
 
-        assert wgpu.gpu is fake_gpu
+def test_the_js_backend_stub_is_importable():
+    # Not usable off emscripten, but it must not be *broken*: ``auto`` imports
+    # it by name there, and a stale import in the stub would only ever be found
+    # by someone building for the web.
+    import wgpu.backends.js_webgpu
 
-        # Cannot register twice once wgpu.GPU is set
-        with raises(RuntimeError):
-            wgpu.backends._register_backend(fake_gpu)
-
-    finally:
-        wgpu.gpu = ori_gpu
-        wgpu.backends._register_backend(ori_gpu)
+    assert isinstance(wgpu.backends.js_webgpu.gpu, wgpu.backends.js_webgpu.GPU)
 
 
 if __name__ == "__main__":
