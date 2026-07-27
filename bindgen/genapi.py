@@ -35,6 +35,59 @@ def _ident(name: str) -> str:
     return name + "_" if keyword.iskeyword(name) else name
 
 
+#: Placeholder the struct module emits before it knows what its own annotations
+#: refer to; ``_resolve_annotation_imports`` swaps it for the real imports.
+_TYPE_CHECKING_MARKER = "#<<TYPE_CHECKING>>"
+#: Import lines whose names are only sometimes used; resolved from the body.
+_CONDITIONAL_IMPORT = "#<<ABC_IMPORT>>"
+_TYPES_IMPORT = "#<<TYPES_IMPORT>>"
+
+
+def _resolve_annotation_imports(lines, own_classes=frozenset()):
+    """Give the struct module the names its annotations mention.
+
+    ``from __future__ import annotations`` means these are never evaluated, so
+    a missing name costs nothing at runtime -- which is exactly why it went
+    unnoticed. It still leaves every ``GPUBuffer`` in a signature unresolvable
+    to a type checker, and the whole point of the struct dataclasses is that
+    they are type-checkable. The names are read back out of the emitted body
+    rather than tracked while emitting, so this cannot drift from it.
+    """
+    body = "\n".join(lines)
+    # Names this module defines itself need no import; the classes module
+    # passes its own, and is left with only the error types it returns.
+    classes = sorted(set(re.findall(r"\bGPU[A-Za-z0-9]+", body)) - own_classes)
+    imports = ["from typing import TYPE_CHECKING", "", "if TYPE_CHECKING:"]
+    if "structs." in body:
+        # Struct fields whose type is another struct; the module refers to
+        # itself the same way its callers do.
+        imports.append("    from wgpu._generated import apistructs as structs")
+    if classes:
+        source = (
+            "wgpu._runtime.errors"
+            if all(n.endswith("Error") for n in classes)
+            else "wgpu._generated.apiclasses"
+        )
+        imports.append(f"    from {source} import (")
+        imports += [f"        {name}," for name in classes]
+        imports.append("    )")
+    out: list[str] = []
+    for line in lines:
+        if line == _TYPE_CHECKING_MARKER:
+            out += imports
+        elif line == _CONDITIONAL_IMPORT:
+            used = [n for n in ("Mapping", "Sequence") if f"{n}[" in body]
+            if used:
+                out.append(f"from collections.abc import {', '.join(used)}")
+        elif line == _TYPES_IMPORT:
+            used = [n for n in ("ArrayLike", "CanvasLike") if n in body]
+            if used:
+                out.append(f"from wgpu._api.types import {', '.join(used)}")
+        else:
+            out.append(line)
+    return out
+
+
 def _annotate(idl, typename: str, *, optional: bool = False) -> str:
     """Resolve an IDL type to a Python annotation.
 
@@ -45,7 +98,9 @@ def _annotate(idl, typename: str, *, optional: bool = False) -> str:
     ann = idl.resolve_type(typename)
     while "list[" in ann:
         ann = ann.replace("list[", "Sequence[", 1)
-    if optional and "None" not in ann:
+    # endswith, not "in": a nested ``dict[str, int | None]`` already
+    # contains the word without being optional itself.
+    if optional and not ann.endswith("| None"):
         ann += " | None"
     return ann
 
@@ -146,8 +201,7 @@ def generate_api_enums(b: bridge.Bridge, lib) -> str:
     names = sorted(b.idl.enums)
     lines.append("")
     lines.append("__all__ = [")
-    lines += [f"    {n!r}," for n in names]
-    lines += [f"    '{n}Enum'," for n in names]
+    lines += [f"    {n!r}," for n in sorted([*names, *(m + "Enum" for m in names)])]
     lines.append("]")
     lines.append("")
 
@@ -266,8 +320,7 @@ def generate_api_flags(b: bridge.Bridge) -> str:
     names = sorted(b.idl.flags)
     lines.append("")
     lines.append("__all__ = [")
-    lines += [f"    {n!r}," for n in names]
-    lines += [f"    '{n}Flags'," for n in names]
+    lines += [f"    {n!r}," for n in sorted([*names, *(m + "Flags" for m in names)])]
     lines.append("]")
     lines.append("")
 
@@ -363,21 +416,22 @@ def generate_api_structs(b: bridge.Bridge) -> str:
         "",
         "from __future__ import annotations",
         "",
-        "from collections.abc import Mapping, Sequence",
+        _CONDITIONAL_IMPORT,
         "from dataclasses import dataclass",
         "",
-        "from wgpu._api.types import ArrayLike, CanvasLike",
-        "from wgpu._generated import apiclasses as classes",
+        _TYPES_IMPORT,
         "from wgpu._generated import apienums as enums",
         "from wgpu._generated import apiflags as flags",
         "from wgpu._api.struct import Struct",
+        "",
+        # Filled in below, once the body says which names it actually used.
+        _TYPE_CHECKING_MARKER,
         "",
         "",
     ]
     names = sorted(b.idl.structs)
     lines.append("__all__ = [")
-    lines += [f"    {n!r}," for n in names]
-    lines += [f"    '{n}Struct'," for n in names]
+    lines += [f"    {n!r}," for n in sorted([*names, *(m + "Struct" for m in names)])]
     lines.append("]")
     lines.append("")
 
@@ -405,7 +459,7 @@ def generate_api_structs(b: bridge.Bridge) -> str:
         lines.append("")
         lines.append(f"{name}Struct = {name} | dict")
         lines.append("")
-    return "\n".join(lines)
+    return "\n".join(_resolve_annotation_imports(lines))
 
 
 # ---- classes ---------------------------------------------------------------
@@ -593,10 +647,12 @@ def generate_api_classes(b: bridge.Bridge, spec: dict, native=None) -> str:
         "from wgpu._api.base import GPUHandle, GPUObjectBase, Mixin",
         "from wgpu._api.base import new_object as _new_object",
         "from wgpu._api.base import slice_data as _slice_data",
-        "from wgpu._api.types import ArrayLike, CanvasLike",
+        _TYPES_IMPORT,
         "from wgpu._generated import apienums as enums",
         "from wgpu._generated import apiflags as flags",
         "from wgpu._generated import apistructs as structs",
+        "",
+        _TYPE_CHECKING_MARKER,
         "",
     ]
     lines += _emit_bindings(binds)
@@ -605,7 +661,7 @@ def generate_api_classes(b: bridge.Bridge, spec: dict, native=None) -> str:
     lines.append("]")
     lines.append("")
     lines.extend(body)
-    return "\n".join(lines)
+    return "\n".join(_resolve_annotation_imports(lines, own_classes=set(names)))
 
 
 def _emit_bindings(binds: set) -> list[str]:
@@ -947,7 +1003,9 @@ def _data_slice_body(
             param = rest[index]
             name = _ident(bridge.camel_to_snake(param.name))
             exprs.append(name)
-            direct.append(_direct_arg_expr(kind, ref, name, param, args[position], binds))
+            direct.append(
+                _direct_arg_expr(kind, ref, name, param, args[position], binds)
+            )
             index += 1
     size_param = rest[index] if index < len(rest) else None
 
@@ -981,7 +1039,11 @@ def _direct_arg_expr(kind, ref, name, param, arg, binds):
     """
     if binds is None:
         return None
-    omittable = not param.required and (param.default or "").strip() in (None, "", "None")
+    omittable = not param.required and (param.default or "").strip() in (
+        None,
+        "",
+        "None",
+    )
     if omittable or arg.get("optional"):
         return None
     if kind == "prim":
@@ -1033,7 +1095,7 @@ def _direct_body(b, spec_object, spec_method, params, binds, native) -> str | No
     exprs = []
     arrays = False
     c_at = 1  # index into the C signature; 0 is the object handle
-    for (kind, ref, is_array), param, arg in zip(parsed, params, args):
+    for (kind, ref, is_array), param, arg in zip(parsed, params, args, strict=True):
         name = _ident(bridge.camel_to_snake(param.name))
         omittable = not param.required and (param.default or "").strip() in (
             None,
@@ -1087,7 +1149,7 @@ def _direct_body(b, spec_object, spec_method, params, binds, native) -> str | No
     lines = [
         f"_a_{_ident(bridge.camel_to_snake(p.name))} = [_o._handle for _o in "
         f"{_ident(bridge.camel_to_snake(p.name))}]"
-        for (_k, _r, is_array), p in zip(parsed, params)
+        for (_k, _r, is_array), p in zip(parsed, params, strict=True)
         if is_array
     ]
     lines.append(f"_r = {expr}")

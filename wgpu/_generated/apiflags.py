@@ -20,14 +20,14 @@ class Flags(metaclass=_EnumType):
 
 __all__ = [
     'BufferUsage',
-    'ColorWrite',
-    'MapMode',
-    'ShaderStage',
-    'TextureUsage',
     'BufferUsageFlags',
+    'ColorWrite',
     'ColorWriteFlags',
+    'MapMode',
     'MapModeFlags',
+    'ShaderStage',
     'ShaderStageFlags',
+    'TextureUsage',
     'TextureUsageFlags',
 ]
 

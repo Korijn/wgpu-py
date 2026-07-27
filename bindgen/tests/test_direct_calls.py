@@ -68,8 +68,13 @@ def _compute_setup(device):
         """
     )
     bgl = device.create_bind_group_layout(
-        entries=[{"binding": 0, "visibility": "COMPUTE",
-                  "buffer": {"type": "storage", "has_dynamic_offset": True}}]
+        entries=[
+            {
+                "binding": 0,
+                "visibility": "COMPUTE",
+                "buffer": {"type": "storage", "has_dynamic_offset": True},
+            }
+        ]
     )
     pipeline = device.create_compute_pipeline(
         layout=device.create_pipeline_layout(bind_group_layouts=[bgl]),
@@ -104,9 +109,11 @@ def test_set_bind_group_with_dynamic_offsets(device):
 
 def test_errors_from_direct_calls_surface_at_the_next_boundary(device):
     """A bad direct call must still raise -- at finish(), not silently."""
+    import wgpu
+
     encoder = device.create_command_encoder()
     rpass_buf = device.create_buffer(size=16, usage="COPY_SRC")
-    with pytest.raises(Exception):
+    with pytest.raises(wgpu.GPUError):
         # Copying more than the buffer holds is a validation error. The copy
         # itself takes the direct path; finish() is where it is reported.
         encoder.copy_buffer_to_buffer(rpass_buf, 0, rpass_buf, 0, 1024)

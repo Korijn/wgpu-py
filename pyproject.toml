@@ -54,7 +54,10 @@ Repository = "https://github.com/pygfx/wgpu-py"
 # * mesonpy: numpy, scikit-image, et al. use this because they compile stuff.
 
 [build-system]
-requires = ["hatchling", "cffi>=1.15.0"]
+# setuptools is not used to build, but cffi's ffi.compile() imports distutils
+# through it, and on Python >= 3.12 distutils is gone from the stdlib -- so
+# without it here the isolated build environment cannot compile the extension.
+requires = ["hatchling", "cffi>=1.15.0", "setuptools"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
@@ -132,6 +135,17 @@ asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 line-length = 88
+# wgpu-native is a pinned submodule -- someone else's repository, carrying its
+# own Python helpers. Linting it reports faults we cannot fix and would have to
+# ignore one by one on every bump.
+extend-exclude = ["wgpu-native"]
+
+[tool.ruff.format]
+# Generated output is not hand-maintained, and CI asserts it matches a fresh
+# generator run byte for byte. Formatting it would make the generator and the
+# formatter have to agree forever, and the codegen check fails the moment they
+# do not. Lint still applies -- only the reformatting is off.
+exclude = ["wgpu/_generated/*"]
 
 [tool.ruff.lint]
 select = ["F", "E", "W", "N", "B", "RUF"]
@@ -146,7 +160,13 @@ ignore = [
 # Generated from webgpu.json; member names deliberately mirror the upstream
 # spec spelling (e.g. RGBA8_unorm, surface_source_XCB_window), so the usual
 # naming conventions do not apply.
-"wgpu/_generated/*" = ["N801", "N802", "N803", "N815", "N816"]
+"wgpu/_generated/*" = ["N801", "N802", "N803", "N812", "N815", "N816"]
+# The slots are grouped by what they are for, with a comment per group; an
+# alphabetical sort would scatter each comment away from what it explains.
+"wgpu/_api/base.py" = ["RUF023"]
+# DrawCancelled is not an error -- it abandons a draw without failing it -- and
+# it is public API that downstream (rendercanvas) catches by name.
+"wgpu/_runtime/errors.py" = ["N818"]
 
 [tool.coverage.report]
 exclude_also = [

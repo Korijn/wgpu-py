@@ -102,8 +102,12 @@ def build_cases(wgpu, device):
     )
     bind_group = device.create_bind_group(
         layout=bgl,
-        entries=[{"binding": 0, "resource": {"buffer": buffer, "offset": 0,
-                                             "size": buffer.size}}],
+        entries=[
+            {
+                "binding": 0,
+                "resource": {"buffer": buffer, "offset": 0, "size": buffer.size},
+            }
+        ],
     )
     pipeline = device.create_compute_pipeline(
         layout=device.create_pipeline_layout(bind_group_layouts=[bgl]),
@@ -159,8 +163,8 @@ def build_cases(wgpu, device):
 
     def read_properties(n):
         for _ in range(n):
-            buffer.size
-            buffer.usage
+            _ = buffer.size
+            _ = buffer.usage
 
     add("read_properties", 50000, read_properties)
 

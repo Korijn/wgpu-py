@@ -173,7 +173,7 @@ def _resolve_default(mem, kind, ref, lib, idl_default=None):
             return {} if kind == "struct" else None
         value = value.strip('"')
         if kind == "enum":
-            from wgpu._generated import apienums  # noqa: PLC0415
+            from wgpu._generated import apienums
 
             table = apienums.TO_INT.get(ref)
             return None if table is None else table[value]

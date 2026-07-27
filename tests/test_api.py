@@ -5,7 +5,7 @@ from dataclasses import fields
 
 import wgpu
 
-from pytest import raises, mark
+from pytest import mark
 from testutils import run_tests, can_use_wgpu_lib
 
 

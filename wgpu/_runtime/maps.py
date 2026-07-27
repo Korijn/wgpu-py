@@ -65,7 +65,7 @@ class EnumMap(dict):
 class FlagMap(dict):
     """Maps a flag name, ``'A|B'`` string, or int to its integer value."""
 
-    __slots__ = ("name", "_cache")
+    __slots__ = ("_cache", "name")
 
     def __init__(self, name: str, mapping: dict):
         super().__init__(mapping)

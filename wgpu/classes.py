@@ -3,5 +3,5 @@
 Available as ``wgpu.classes``, and also from the root ``wgpu`` namespace.
 """
 
-from wgpu._api import *  # noqa: F401,F403
+from wgpu._api import *  # noqa: F403
 from wgpu._api import __all__  # noqa: F401

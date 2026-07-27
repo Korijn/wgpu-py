@@ -91,7 +91,7 @@ def create_statistics_query_set(device, *, label="", count, statistics):
         data = _ffi.new("char[]", label.encode())
         descriptor.label.data = data
         descriptor.label.length = len(label.encode())
-        _keep = data  # noqa: F841 - alive until the call returns
+        _keep = data
     handle = _lib.wgpuDeviceCreateQuerySet(device._handle, descriptor)
     api.errors.raise_if_error()
     return api.registry["query_set"](handle, device._pump, device)

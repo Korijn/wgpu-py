@@ -253,7 +253,9 @@ class Invoker:
         def fast_call(caller, py_args, _c=cfunc, _conv=converters, _n=n_args):
             if len(py_args) != _n:
                 raise TypeError(f"{method.py}() takes {_n} args, got {len(py_args)}")
-            result = _c(caller._handle, *[f(v) for f, v in zip(_conv, py_args)])
+            result = _c(
+                caller._handle, *[f(v) for f, v in zip(_conv, py_args, strict=True)]
+            )
             return result if wrap is None else wrap(result, caller)
 
         return fast_call

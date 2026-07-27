@@ -67,5 +67,10 @@ def test_signatures_are_introspectable(api):
     sig = inspect.signature(api.registry["device"].create_buffer)
     # Descriptor-taking methods are flattened into keyword arguments, so the
     # signature shows the descriptor's fields rather than "descriptor".
-    assert list(sig.parameters) == ["self", "label", "size", "usage",
-                                    "mapped_at_creation"]
+    assert list(sig.parameters) == [
+        "self",
+        "label",
+        "size",
+        "usage",
+        "mapped_at_creation",
+    ]

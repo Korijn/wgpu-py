@@ -227,7 +227,9 @@ def test_generated_classes_declare_slots(source):
     """
     import re
 
-    classes = re.findall(r"\nclass (GPU\w+)\([^)]*\):\n(.*?)(?=\nclass |\Z)", source, re.S)
+    classes = re.findall(
+        r"\nclass (GPU\w+)\([^)]*\):\n(.*?)(?=\nclass |\Z)", source, re.S
+    )
     assert classes, "no generated classes found -- the pattern is wrong"
     missing = [name for name, body in classes if "__slots__" not in body]
     assert not missing, f"generated classes without __slots__: {missing}"

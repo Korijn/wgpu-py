@@ -15,10 +15,20 @@ from wgpu._api.base import unimplemented as _unimplemented
 from wgpu._api.base import GPUHandle, GPUObjectBase, Mixin
 from wgpu._api.base import new_object as _new_object
 from wgpu._api.base import slice_data as _slice_data
-from wgpu._api.types import ArrayLike, CanvasLike
+from wgpu._api.types import ArrayLike
 from wgpu._generated import apienums as enums
 from wgpu._generated import apiflags as flags
 from wgpu._generated import apistructs as structs
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from wgpu._generated import apistructs as structs
+    from wgpu._generated.apiclasses import (
+        GPUError,
+        GPUHandle,
+        GPUObjectBase,
+    )
 
 # Bound once at import so the hot methods below are a single C call.
 from wgpu._native import ffi as _ffi, lib as _lib
@@ -126,11 +136,11 @@ class GPUAdapter(GPUHandle):
     __slots__ = ()
     _spec_name = 'adapter'
 
-    def request_device_async(self, *, label: str = "", required_features: Sequence[enums.FeatureNameEnum] = (), required_limits: dict[str, int | None] = None, default_queue: structs.QueueDescriptorStruct | None = None) -> GPUDevice:
+    def request_device_async(self, *, label: str = "", required_features: Sequence[enums.FeatureNameEnum] = (), required_limits: dict[str, int | None] | None = None, default_queue: structs.QueueDescriptorStruct | None = None) -> GPUDevice:
         """GPUAdapter.requestDevice -- see the WebGPU specification."""
         return self._promise(self._call_desc('request_device', {'label': label, 'required_features': required_features, 'required_limits': required_limits, 'default_queue': default_queue}))
 
-    def request_device_sync(self, *, label: str = "", required_features: Sequence[enums.FeatureNameEnum] = (), required_limits: dict[str, int | None] = None, default_queue: structs.QueueDescriptorStruct | None = None) -> GPUDevice:
+    def request_device_sync(self, *, label: str = "", required_features: Sequence[enums.FeatureNameEnum] = (), required_limits: dict[str, int | None] | None = None, default_queue: structs.QueueDescriptorStruct | None = None) -> GPUDevice:
         """GPUAdapter.requestDevice -- see the WebGPU specification."""
         return self._await(self._call_desc('request_device', {'label': label, 'required_features': required_features, 'required_limits': required_limits, 'default_queue': default_queue}))
 

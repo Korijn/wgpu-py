@@ -197,7 +197,9 @@ def test_compute_immediates():
     values = np.arange(COUNT, dtype=np.uint32)
     buffer = device.create_buffer_with_data(data=values, usage="STORAGE|COPY_SRC")
     bind_group_layout = device.create_bind_group_layout(
-        entries=[{"binding": 0, "visibility": "COMPUTE", "buffer": {"type": "storage"}}],
+        entries=[
+            {"binding": 0, "visibility": "COMPUTE", "buffer": {"type": "storage"}}
+        ],
     )
     bind_group = device.create_bind_group(
         layout=bind_group_layout,

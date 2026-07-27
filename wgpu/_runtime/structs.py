@@ -164,7 +164,7 @@ class StructBuilder:
                     f"{desc.c_name}: got {len(values)} values but the struct has "
                     f"{len(desc.members)} fields"
                 )
-            mapping = {m.py: v for m, v in zip(desc.members, values)}
+            mapping = {m.py: v for m, v in zip(desc.members, values, strict=False)}
         known, steps, reshape = self._plan(desc)
         if reshape is not None:
             mapping = reshape(self, desc, mapping, keep)

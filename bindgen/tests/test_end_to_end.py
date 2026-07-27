@@ -60,7 +60,6 @@ def test_gpu_data_roundtrip(device):
     Exercises struct args, raw-data (c_void) args, array args (submit), the
     async future, buffer mapping as a memoryview, and object lifetimes.
     """
-    from wgpu._generated import flags
 
     data = bytes(range(16))
 
