@@ -120,16 +120,27 @@ manylinux-aarch64-image = "manylinux2014"
 # The manylinux image has no Rust, and rustup's default install is not on PATH
 # for later steps, so it is placed somewhere the container already looks.
 before-all = """
-# wgpu-native's build.rs runs bindgen over ffi/wgpu.h, and bindgen needs
-# libclang at build time. The manylinux images ship a C toolchain but no
-# clang, so cargo fails with "Unable to find libclang" -- on the container
-# only, which is why macOS and Windows build fine without this.
-yum install -y clang || dnf install -y clang
+set -e
+# wgpu-native's build.rs runs bindgen over ffi/wgpu.h, and bindgen needs a
+# libclang of at least 6.0 at build time -- it calls entry points added there,
+# such as clang_getTranslationUnitTargetInfo. The manylinux2014 image is
+# CentOS 7, whose own clang is 3.4, so installing the distro package gets far
+# enough to load a libclang and then fails on the first such call. PyPI's
+# libclang wheel carries a self-contained libclang.so needing no more than
+# glibc 2.6, so it loads here without moving the manylinux baseline off 2.17.
+# macOS and Windows have a new enough libclang already, which is why only the
+# container needs this.
+PY=$(ls -d /opt/python/cp31*/bin/python | head -1)
+"$PY" -m pip install --target /opt/libclang libclang
+export LIBCLANG_PATH=/opt/libclang/clang/native
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
 source $HOME/.cargo/env
 cargo build --release --lib --manifest-path wgpu-native/Cargo.toml
 """
-environment = { PATH = "$HOME/.cargo/bin:$PATH" }
+# LIBCLANG_PATH is repeated here because before-all's exports do not carry into
+# the per-wheel build steps, and the build hook falls back to cargo if the
+# archive is ever missing.
+environment = { PATH = "$HOME/.cargo/bin:$PATH", LIBCLANG_PATH = "/opt/libclang/clang/native" }
 
 [tool.cibuildwheel.macos]
 # wgpu-native's Metal backend needs a deployment target new enough for the
