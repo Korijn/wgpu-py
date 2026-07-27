@@ -20,8 +20,11 @@ dependencies = [
 # For users
 imgui = ["imgui-bundle>=1.92.0, <2"]
 # For devs / ci
-build = ["build", "cffi>=1.15.0", "cibuildwheel", "hatchling", "twine"]
-codegen = ["pytest", "numpy", "ruff"]
+build = ["build", "cffi>=1.15.0", "cibuildwheel", "hatchling", "setuptools", "twine"]
+# setuptools: the generator and its tests call cffi's ffi.compile(),
+# which needs distutils via setuptools on Python >= 3.12. The
+# build-system entry only covers the isolated build environment.
+codegen = ["pytest", "numpy", "ruff", "setuptools"]
 lint = ["ruff", "pre-commit"]
 tests = [
     "numpy",
