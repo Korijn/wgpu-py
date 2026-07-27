@@ -890,5 +890,31 @@ def test_poll_thread_only_runs_while_work_is_outstanding():
     buffer.unmap()
 
 
+@mark.anyio
+async def test_pipeline_creation_async_is_answered_not_refused():
+    """wgpu-native declares createRenderPipelineAsync but does not implement it.
+
+    Calling the C function outright would abort the process, so the generated
+    body falls back to the synchronous sibling and hands back a resolved
+    promise -- which is what the spec says the async form means, and what the
+    examples' async setup path relies on.
+    """
+    device = wgpu.utils.get_default_device()
+    shader = device.create_shader_module(
+        code="@compute @workgroup_size(1) fn main() {}"
+    )
+    pipeline = await device.create_compute_pipeline_async(
+        layout="auto", compute={"module": shader, "entry_point": "main"}
+    )
+    assert isinstance(pipeline, wgpu.GPUComputePipeline)
+    # The blocking form has to work too, and give the same kind of object.
+    assert isinstance(
+        device.create_compute_pipeline(
+            layout="auto", compute={"module": shader, "entry_point": "main"}
+        ),
+        wgpu.GPUComputePipeline,
+    )
+
+
 if __name__ == "__main__":
     run_tests(globals())

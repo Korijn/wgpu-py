@@ -12,6 +12,11 @@ from wgpu._api import __all__  # noqa: F401
 from . import extras  # noqa: F401
 from .extras import request_device_sync  # noqa: F401
 
+#: The API entrypoint. Re-exported rather than constructed, so this is the very
+#: object ``wgpu.gpu`` is: ``wgpu.backends.auto`` reads it from here, and code
+#: written against the old backend-selection API expects the same singleton.
+from wgpu import gpu  # noqa: F401
+
 
 def _wgpu_native_version() -> str:
     """The version of the wgpu-native library compiled into this package."""

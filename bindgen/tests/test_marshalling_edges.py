@@ -765,3 +765,48 @@ def test_flags_accept_an_integer_literal_string():
     assert mask["RED|0x2"] == mask["RED"] | mask["GREEN"]
     with pytest.raises(InvalidValueError):
         mask["not_a_flag"]
+
+
+def test_web_idl_defaults_reach_every_member(device):
+    """A default the IDL states must survive the trip into the descriptor.
+
+    The two specs spell a member differently -- webgpu.json says ``sample_type``
+    where the C header says ``sampleType`` -- and the generator has to key its
+    IDL lookups by the C spelling. Getting that wrong loses the default for
+    every *multi-word* member and only those, which is silent: the member goes
+    out as a zero, and for these particular ones a zero means "not used", so
+    wgpu-native rejects the whole entry.
+    """
+    from wgpu._generated.structs import STRUCTS
+
+    expected = {
+        # (struct, member): the Web IDL's stated default, as a C value.
+        ("texture_binding_layout", "sample_type"): "float",
+        ("texture_binding_layout", "view_dimension"): "2d",
+        ("storage_texture_binding_layout", "view_dimension"): "2d",
+        ("sampler_binding_layout", "type"): "filtering",
+        ("buffer_binding_layout", "type"): "uniform",
+    }
+    from wgpu._generated import apienums
+
+    for (struct, member), spelling in expected.items():
+        mem = next(m for m in STRUCTS[struct].members if m.py == member)
+        want = apienums.TO_INT[mem.ref][spelling]
+        assert mem.default == want, (
+            f"{struct}.{member} defaults to {mem.default!r}, "
+            f"but the IDL says {spelling!r} ({want})"
+        )
+
+
+def test_a_bare_binding_layout_is_accepted(device):
+    """Each of the four layout kinds must work with no members given.
+
+    Left without its IDL default, ``texture={}`` reaches wgpu-native as
+    "binding not used" for all four kinds at once, and wgpu-native answers a
+    Rust panic that cannot unwind -- so the process aborts rather than raising.
+    """
+    for kind in ("buffer", "sampler", "texture"):
+        layout = device.create_bind_group_layout(
+            entries=[{"binding": 0, "visibility": "FRAGMENT", kind: {}}]
+        )
+        assert layout is not None, kind

@@ -235,11 +235,24 @@ def test_generated_classes_declare_slots(source):
     assert not missing, f"generated classes without __slots__: {missing}"
 
 
-def test_objects_have_no_instance_dict(device):
+def test_objects_still_take_attributes_of_their_own(device):
+    """Slots are an addition, not a restriction.
+
+    Hanging your own attribute off a GPU object has always worked -- this
+    repo's cube example attaches a staging buffer to the uniform buffer it
+    belongs with -- so the slots must not have taken that away.
+    """
     buffer = device.create_buffer(size=64, usage="COPY_DST")
-    assert not hasattr(buffer, "__dict__")
-    with pytest.raises(AttributeError):
-        buffer.not_a_real_attribute = 1
+    buffer.some_attribute_of_my_own = 1
+    assert buffer.some_attribute_of_my_own == 1
+    assert "some_attribute_of_my_own" in buffer.__dict__
+
+
+def test_slotted_state_does_not_land_in_the_instance_dict(device):
+    """The point of the slots: the hot state is not reached through a dict."""
+    buffer = device.create_buffer(size=64, usage="COPY_DST")
+    assert buffer.size == 64  # populates the cache
+    assert buffer.__dict__ == {}, f"slotted state leaked into a dict: {buffer.__dict__}"
 
 
 def test_immutable_properties_are_read_from_c_once(device):

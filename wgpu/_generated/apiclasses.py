@@ -11,7 +11,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from wgpu._api import overrides as _ov
-from wgpu._api.base import unimplemented as _unimplemented
 from wgpu._api.base import GPUHandle, GPUObjectBase, Mixin
 from wgpu._api.base import new_object as _new_object
 from wgpu._api.base import slice_data as _slice_data
@@ -35,6 +34,7 @@ from wgpu._native import ffi as _ffi, lib as _lib
 from wgpu._api.base import raise_if_error as _raise_if_error
 from wgpu._generated.constants import strlen as _STRLEN
 from wgpu._runtime.errors import InvalidValueError
+from wgpu._runtime.awaitable import completed as _completed
 
 _NULL = _ffi.NULL
 _WHOLE64 = 18446744073709551615
@@ -417,16 +417,28 @@ class GPUDevice(GPUObjectBase):
             _d.label.length = _STRLEN
         if address_mode_u is not None:
             _d.addressModeU = _E_address_mode[address_mode_u]
+        else:
+            _d.addressModeU = 1
         if address_mode_v is not None:
             _d.addressModeV = _E_address_mode[address_mode_v]
+        else:
+            _d.addressModeV = 1
         if address_mode_w is not None:
             _d.addressModeW = _E_address_mode[address_mode_w]
+        else:
+            _d.addressModeW = 1
         if mag_filter is not None:
             _d.magFilter = _E_filter_mode[mag_filter]
+        else:
+            _d.magFilter = 1
         if min_filter is not None:
             _d.minFilter = _E_filter_mode[min_filter]
+        else:
+            _d.minFilter = 1
         if mipmap_filter is not None:
             _d.mipmapFilter = _E_mipmap_filter_mode[mipmap_filter]
+        else:
+            _d.mipmapFilter = 1
         if lod_min_clamp is not None:
             _d.lodMinClamp = lod_min_clamp
         if lod_max_clamp is not None:
@@ -469,11 +481,11 @@ class GPUDevice(GPUObjectBase):
 
     def create_compute_pipeline_async(self, *, label: str = "", layout: GPUPipelineLayout | enums.AutoLayoutModeEnum, compute: structs.ProgrammableStageStruct) -> GPUComputePipeline:
         """GPUDevice.createComputePipelineAsync -- see the WebGPU specification."""
-        return self._promise(_unimplemented('wgpuDeviceCreateComputePipelineAsync'))
+        return self._promise(_completed(self.create_compute_pipeline(**{'label': label, 'layout': layout, 'compute': compute})))
 
     def create_render_pipeline_async(self, *, label: str = "", layout: GPUPipelineLayout | enums.AutoLayoutModeEnum, vertex: structs.VertexStateStruct, primitive: structs.PrimitiveStateStruct | None = None, depth_stencil: structs.DepthStencilStateStruct | None = None, multisample: structs.MultisampleStateStruct | None = None, fragment: structs.FragmentStateStruct | None = None) -> GPURenderPipeline:
         """GPUDevice.createRenderPipelineAsync -- see the WebGPU specification."""
-        return self._promise(_unimplemented('wgpuDeviceCreateRenderPipelineAsync'))
+        return self._promise(_completed(self.create_render_pipeline(**{'label': label, 'layout': layout, 'vertex': vertex, 'primitive': primitive, 'depth_stencil': depth_stencil, 'multisample': multisample, 'fragment': fragment})))
 
     def create_command_encoder(self, *, label: str = "") -> GPUCommandEncoder:
         """GPUDevice.createCommandEncoder -- see the WebGPU specification."""

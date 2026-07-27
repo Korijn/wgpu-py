@@ -171,6 +171,13 @@ def _resolve_default(mem, kind, ref, lib, idl_default=None):
             # to {} and thus to count 1, while a binding layout's sampler has
             # no default and must stay unset.
             return {} if kind == "struct" else None
+        if value == "[]":
+            # An empty sequence -- ``requiredFeatures = []`` and friends. The C
+            # side spells that as a zero count and a null pointer, which is what
+            # the struct already holds, so there is nothing to write. Returning
+            # the ref's enum value here instead would be nonsense: the default
+            # describes the *list*, not one element of it.
+            return None
         value = value.strip('"')
         if kind == "enum":
             from wgpu._generated import apienums
@@ -205,6 +212,16 @@ def generate_structs(spec, ffi, lib, bridge=None) -> str:
     written in the public API's vocabulary directly -- no translation layer, and
     no per-call renaming at runtime.
     """
+
+    # All three maps below are read back with the *C header* field name, the way
+    # the member loop spells it. ``bridge.struct_fields`` answers in webgpu.json's
+    # spelling instead (``sample_type``, not ``sampleType``), so it is converted
+    # once here. Keying them differently on the two sides silently loses every
+    # multi-word member -- and only those, which is why a binding layout's
+    # ``type`` kept its default while its ``sample_type`` quietly lost one.
+    def _c_key(spec_member: str) -> str:
+        return naming.c_struct_field(spec_member)
+
     # C struct name -> {C member -> public keyword}, from the IDL.
     public_names: dict[str, dict[str, str]] = {}
     adapters: dict[str, list[tuple[str, str]]] = {}
@@ -226,14 +243,16 @@ def generate_structs(spec, ffi, lib, bridge=None) -> str:
                 if c_member is None:
                     continue
                 if attr.default is not None:
-                    idl_defaults.setdefault(spec_struct, {})[c_member] = attr.default
+                    idl_defaults.setdefault(spec_struct, {})[_c_key(c_member)] = (
+                        attr.default
+                    )
                 if attr.required:
-                    idl_required.setdefault(spec_struct, set()).add(c_member)
+                    idl_required.setdefault(spec_struct, set()).add(_c_key(c_member))
     if bridge is not None:
         for (idl_struct, idl_field), c_member in bridge.struct_fields.items():
             spec_struct = bridge.structs[idl_struct]
             public = from_bridge.camel_to_snake(idl_field)
-            public_names.setdefault(spec_struct, {})[c_member] = public
+            public_names.setdefault(spec_struct, {})[_c_key(c_member)] = public
         for (idl_struct, idl_field), (adapter, target) in bridge.shape_adapted.items():
             spec_struct = bridge.structs.get(idl_struct)
             if spec_struct is None:

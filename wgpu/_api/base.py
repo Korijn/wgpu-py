@@ -72,6 +72,16 @@ class GPUHandle(Mixin):
         # A device's poll thread, which drives its completion callbacks while
         # anything is outstanding. See wgpu.backends.wgpu_native._poller.
         "_poller",
+        # Attaching your own attribute to a GPU object has always worked, and
+        # code in the wild does it -- this repo's own cube example hangs a
+        # staging buffer off the uniform buffer, and pygfx does the same sort of
+        # thing. Declaring it once here, at the single root of every handle
+        # class, is what makes the slots above an addition rather than a
+        # restriction: they still back the cached properties with a slot load
+        # instead of a dict lookup, and instances keep a __dict__ for everyone
+        # else. Naming it in any subclass too would be a TypeError, so this is
+        # the only place it may appear.
+        "__dict__",
     )
 
     _spec_name = ""

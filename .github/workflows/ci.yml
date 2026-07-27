@@ -51,6 +51,11 @@ jobs:
       with:
         # The binding is compiled from the submodule.
         submodules: recursive
+        # The generator records the wgpu-native version, which it reads with
+        # `git describe` in the submodule. The default shallow checkout brings
+        # no tags along, so there would be nothing to describe -- and the only
+        # symptom is this job's diff check failing on that one line.
+        fetch-depth: 0
     - name: Set up Python
       uses: actions/setup-python@v5
       with:

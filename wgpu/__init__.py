@@ -15,10 +15,12 @@ from .utils.device import *  # get_default_device et al are top-level names
 from . import utils
 from . import resources
 
+#: The API entrypoint, equivalent to the browser's ``navigator.gpu``.
+gpu = GPU()  # noqa: F405
+
 # There is only one backend now, statically linked, so this no longer selects
 # anything -- but ``wgpu.backends.wgpu_native`` is how downstream code reaches
 # wgpu-native's extras, and it has always resolved off a bare ``import wgpu``.
-from . import backends
-
-#: The API entrypoint, equivalent to the browser's ``navigator.gpu``.
-gpu = GPU()  # noqa: F405
+# It comes after ``gpu`` because the backend module re-exports that very
+# object, and importing it first would find the name not yet bound.
+from . import backends  # noqa: E402

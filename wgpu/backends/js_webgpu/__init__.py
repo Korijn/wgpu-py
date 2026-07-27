@@ -8,8 +8,6 @@ generated.
 
 # NOTE: this is just a stub for now!!
 
-from .. import _register_backend
-
 
 class GPU:
     def request_adapter_sync(self, **parameters):
@@ -28,4 +26,3 @@ class GPU:
 
 
 gpu = GPU()
-_register_backend(gpu)

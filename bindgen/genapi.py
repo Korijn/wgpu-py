@@ -41,6 +41,7 @@ _TYPE_CHECKING_MARKER = "#<<TYPE_CHECKING>>"
 #: Import lines whose names are only sometimes used; resolved from the body.
 _CONDITIONAL_IMPORT = "#<<ABC_IMPORT>>"
 _TYPES_IMPORT = "#<<TYPES_IMPORT>>"
+_UNIMPLEMENTED_IMPORT = "#<<UNIMPLEMENTED_IMPORT>>"
 
 
 def _resolve_annotation_imports(lines, own_classes=frozenset()):
@@ -83,6 +84,13 @@ def _resolve_annotation_imports(lines, own_classes=frozenset()):
             used = [n for n in ("ArrayLike", "CanvasLike") if n in body]
             if used:
                 out.append(f"from wgpu._api.types import {', '.join(used)}")
+        elif line == _UNIMPLEMENTED_IMPORT:
+            # Only some unimplemented C functions end up guarded: an async one
+            # with a synchronous sibling is answered by calling the sibling
+            # instead. Whether any guard is left is a property of the wgpu-native
+            # release, so it is read back out of the body rather than assumed.
+            if "_unimplemented(" in body:
+                out.append("from wgpu._api.base import unimplemented as _unimplemented")
         else:
             out.append(line)
     return out
@@ -643,7 +651,7 @@ def generate_api_classes(b: bridge.Bridge, spec: dict, native=None) -> str:
         "from collections.abc import Sequence",
         "",
         "from wgpu._api import overrides as _ov",
-        "from wgpu._api.base import unimplemented as _unimplemented",
+        _UNIMPLEMENTED_IMPORT,
         "from wgpu._api.base import GPUHandle, GPUObjectBase, Mixin",
         "from wgpu._api.base import new_object as _new_object",
         "from wgpu._api.base import slice_data as _slice_data",
@@ -685,6 +693,8 @@ def _emit_bindings(binds: set) -> list[str]:
         lines.append("from wgpu._generated.constants import strlen as _STRLEN")
     if "required" in kinds:
         lines.append("from wgpu._runtime.errors import InvalidValueError")
+    if "completed" in kinds:
+        lines.append("from wgpu._runtime.awaitable import completed as _completed")
     lines.append("")
     if "null" in kinds or "handle" in kinds:
         lines.append("_NULL = _ffi.NULL")
@@ -1363,6 +1373,25 @@ def _unimplemented_body(spec_object, spec_method) -> str | None:
     return f"_unimplemented({c_func!r})"
 
 
+def _sync_sibling_of_async(interface, fn_name) -> str | None:
+    """The blocking form of an ``*Async`` method, when the IDL declares one.
+
+    wgpu-native declares createRenderPipelineAsync and createComputePipelineAsync
+    but does not implement them, and the spec defines each as its synchronous
+    sibling plus a promise -- so the async form is answered by calling the
+    sibling and handing back an already-resolved promise, which is what wgpu-py
+    has always done. The pair is read off the IDL rather than listed here, so a
+    wgpu-native release that implements the C function goes straight back to a
+    real call, and a new async method gets the same treatment for free.
+    """
+    if not fn_name.endswith("Async"):
+        return None
+    sibling = fn_name[: -len("Async")]
+    if sibling not in interface.functions:
+        return None
+    return _ident(bridge.camel_to_snake(sibling))
+
+
 def _destroy_consuming_body(spec_object, spec_method, binds) -> str | None:
     """Destroy for the handles wgpu-native frees on the way out.
 
@@ -1417,6 +1446,11 @@ def _emit_method(
     if flattened:
         sig, mapping = _flatten_descriptor(b, params[0].typename)
         call = _unimplemented_body(spec_object, spec_method)
+        if call is not None and is_async and binds is not None:
+            sibling = _sync_sibling_of_async(interface, fn_name)
+            if sibling is not None:
+                binds.add(("completed", None))
+                call = f"_completed(self.{sibling}(**{mapping}))"
         if call is None and not is_async and binds is not None:
             compiled = _compiled_descriptor_body(
                 b, spec_object, spec_method, params[0].typename, binds, native

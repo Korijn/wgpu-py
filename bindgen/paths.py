@@ -101,20 +101,34 @@ def native_version() -> str:
 
     Read from the submodule's git tag: wgpu-native's Cargo version is a
     placeholder, and wgpuGetVersion() reports 0.0.0.0 unless the build sets it.
+
+    ``--always`` is deliberately not passed. It would turn "no tags here" into
+    a bare commit hash, which is a perfectly good-looking string that lands in
+    a *committed* generated file -- so a shallow clone would silently generate
+    a different version than a full one, and the only symptom is the codegen
+    check failing on a one-line diff nobody can reproduce locally.
     """
     import subprocess
 
     try:
         proc = subprocess.run(
-            ["git", "describe", "--tags", "--always"],
+            ["git", "describe", "--tags"],
             cwd=NATIVE_ROOT,
             capture_output=True,
             text=True,
             timeout=30,
         )
-    except (OSError, subprocess.SubprocessError):
-        return "unknown"
-    return proc.stdout.strip().lstrip("v") or "unknown"
+    except (OSError, subprocess.SubprocessError) as err:
+        raise RuntimeError(f"cannot read the wgpu-native version: {err}") from err
+    version = proc.stdout.strip().lstrip("v")
+    if proc.returncode != 0 or not version:
+        raise RuntimeError(
+            "cannot read the wgpu-native version: no tag is reachable from "
+            f"{NATIVE_ROOT}. Most likely the submodule was cloned shallow; "
+            "`git -C wgpu-native fetch --tags --unshallow` fixes it.\n"
+            f"({proc.stderr.strip()})"
+        )
+    return version
 
 
 def native_commit_sha() -> str:

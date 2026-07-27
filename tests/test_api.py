@@ -220,5 +220,26 @@ def test_there_is_exactly_one_backend():
     assert wgpu.backends.wgpu_native.GPUDevice is wgpu.GPUDevice
 
 
+def test_the_backend_modules_still_expose_gpu():
+    # ``auto`` reads ``module.gpu`` off whichever backend it picks, so a backend
+    # module that stopped exporting it makes the import itself raise -- which is
+    # how this went unnoticed: nothing but PyInstaller's frozen app imports
+    # ``auto``, and the failure only shows up there.
+    import wgpu.backends.auto
+    import wgpu.backends.wgpu_native
+
+    assert wgpu.backends.auto.gpu is wgpu.gpu
+    assert wgpu.backends.wgpu_native.gpu is wgpu.gpu
+
+
+def test_the_js_backend_stub_is_importable():
+    # Not usable off emscripten, but it must not be *broken*: ``auto`` imports
+    # it by name there, and a stale import in the stub would only ever be found
+    # by someone building for the web.
+    import wgpu.backends.js_webgpu
+
+    assert isinstance(wgpu.backends.js_webgpu.gpu, wgpu.backends.js_webgpu.GPU)
+
+
 if __name__ == "__main__":
     run_tests(globals())
