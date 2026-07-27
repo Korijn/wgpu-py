@@ -134,20 +134,26 @@ PY=$(ls -d /opt/python/cp31*/bin/python | head -1)
 "$PY" -m pip install --target /opt/libclang libclang
 export LIBCLANG_PATH=/opt/libclang/clang/native
 # That wheel ships the shared library alone, with none of clang's own
-# freestanding headers, so webgpu.h's `#include <stdint.h>` finds nothing and
-# bindgen reports "'stddef.h' file not found". The distro clang is installed
-# purely for the resource directory that comes with it: the headers only
-# forward to compiler builtins (__SIZE_TYPE__ and friends), which is why 3.4's
-# copies are readable by libclang 18 -- verified by parsing ffi/wgpu.h with
-# exactly that pairing. Globbed rather than written out, since the directory is
-# named after the distro clang's version.
+# freestanding headers, so webgpu.h's `#include <stddef.h>` finds nothing. The
+# distro clang is installed purely for the resource directory that comes with
+# it; those headers only forward to compiler builtins (__SIZE_TYPE__ and
+# friends), so 3.4's copies are readable by libclang 18.
+#
+# Only the headers glibc does *not* provide are taken. Copying the whole
+# directory also shadows glibc's <stdint.h> with clang 3.4's, whose hosted mode
+# is a bare `#include_next <stdint.h>` -- and that chain does not land here, so
+# uint32_t ends up undefined. Left out, <stdint.h> can only resolve to glibc's,
+# which defines the fixed-width types outright.
 yum install -y clang || dnf install -y clang
 CLANG_BUILTIN=$(ls -d /usr/lib*/clang/*/include 2>/dev/null | head -1)
 test -n "$CLANG_BUILTIN" || { echo "no clang resource headers found"; exit 1; }
-# Copied to a fixed path so the per-wheel steps below can name it: that
+# Copied to a fixed path so the per-wheel steps below can name it: the source
 # directory is versioned, and `environment` cannot glob.
 mkdir -p /opt/libclang/include
-cp -r "$CLANG_BUILTIN/." /opt/libclang/include/
+for h in stddef.h stdarg.h stdbool.h float.h; do
+  test -f "$CLANG_BUILTIN/$h" && cp "$CLANG_BUILTIN/$h" /opt/libclang/include/
+done
+test -f /opt/libclang/include/stddef.h || { echo "no stddef.h in $CLANG_BUILTIN"; exit 1; }
 export BINDGEN_EXTRA_CLANG_ARGS="-isystem /opt/libclang/include"
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
 source $HOME/.cargo/env
