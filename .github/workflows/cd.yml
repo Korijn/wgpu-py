@@ -12,9 +12,11 @@ on:
   push:
     tags:
       - 'v*'
+  # Unfiltered, as in ci.yml: a wheel matrix that only runs for pull requests
+  # into one branch is a wheel matrix that does not run. It is the expensive
+  # workflow, so if the fork's minutes become a concern, narrow it with a path
+  # filter or a label rather than a branch name.
   pull_request:
-    branches:
-      - main
 
 jobs:
 

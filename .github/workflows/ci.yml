@@ -5,11 +5,15 @@ on:
   push:
     branches:
       - main
+      - master
+      - dev
     tags:
       - 'v*'
+  # Deliberately unfiltered. This repo is a fork: master tracks upstream and
+  # dev is the integration branch, so pinning the filter to one branch name
+  # silently disables CI the moment a pull request targets the other one --
+  # which is exactly what happened.
   pull_request:
-    branches:
-      - main
 
 jobs:
 
