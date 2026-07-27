@@ -750,7 +750,7 @@ def test_api_tracing_refuses_rather_than_writing_nothing(wgpu):
 
 
 def test_flags_accept_an_integer_literal_string():
-    """"0xF" is a flag value wgpu-py has always taken, and the examples use it.
+    """ "0xF" is a flag value wgpu-py has always taken, and the examples use it.
 
     The named members are the documented spelling, but a mask written out as a
     number -- from a config file, or copied from the C headers -- reached the
