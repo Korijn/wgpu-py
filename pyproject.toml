@@ -120,6 +120,11 @@ manylinux-aarch64-image = "manylinux2014"
 # The manylinux image has no Rust, and rustup's default install is not on PATH
 # for later steps, so it is placed somewhere the container already looks.
 before-all = """
+# wgpu-native's build.rs runs bindgen over ffi/wgpu.h, and bindgen needs
+# libclang at build time. The manylinux images ship a C toolchain but no
+# clang, so cargo fails with "Unable to find libclang" -- on the container
+# only, which is why macOS and Windows build fine without this.
+yum install -y clang || dnf install -y clang
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
 source $HOME/.cargo/env
 cargo build --release --lib --manifest-path wgpu-native/Cargo.toml
