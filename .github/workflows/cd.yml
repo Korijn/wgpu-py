@@ -174,9 +174,21 @@ jobs:
     - name: Install the wheel and use it
       shell: bash
       run: |
-          # Install from the built wheels only -- never fall back to an index,
-          # or a passing test might be testing a released wgpu instead.
-          pip install --no-index --find-links dist wgpu
+          # wgpu itself comes from the built wheels only -- never from an index,
+          # or a passing test might be testing a released wgpu instead. That
+          # also means pip cannot reach its dependencies, so they are installed
+          # separately, read back out of the wheel's own metadata rather than
+          # written out here: a list repeated in CI is a list that goes stale.
+          # pip evaluates the environment markers, so the darwin-only entry
+          # lands only on macOS.
+          pip install --no-index --find-links dist --no-deps wgpu
+          python - <<'PY' > requirements-of-the-wheel.txt
+          from importlib.metadata import requires
+          # Skip the optional extras; nothing here asks for them.
+          print("\n".join(r for r in requires("wgpu") or [] if "extra ==" not in r))
+          PY
+          cat requirements-of-the-wheel.txt
+          pip install -r requirements-of-the-wheel.txt
           pip install numpy pytest
           # Leave the repo, so `import wgpu` cannot resolve to the source tree.
           pushd $HOME
