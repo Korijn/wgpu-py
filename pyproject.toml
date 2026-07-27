@@ -133,14 +133,30 @@ set -e
 PY=$(ls -d /opt/python/cp31*/bin/python | head -1)
 "$PY" -m pip install --target /opt/libclang libclang
 export LIBCLANG_PATH=/opt/libclang/clang/native
+# That wheel ships the shared library alone, with none of clang's own
+# freestanding headers, so webgpu.h's `#include <stdint.h>` finds nothing and
+# bindgen reports "'stddef.h' file not found". The distro clang is installed
+# purely for the resource directory that comes with it: the headers only
+# forward to compiler builtins (__SIZE_TYPE__ and friends), which is why 3.4's
+# copies are readable by libclang 18 -- verified by parsing ffi/wgpu.h with
+# exactly that pairing. Globbed rather than written out, since the directory is
+# named after the distro clang's version.
+yum install -y clang || dnf install -y clang
+CLANG_BUILTIN=$(ls -d /usr/lib*/clang/*/include 2>/dev/null | head -1)
+test -n "$CLANG_BUILTIN" || { echo "no clang resource headers found"; exit 1; }
+# Copied to a fixed path so the per-wheel steps below can name it: that
+# directory is versioned, and `environment` cannot glob.
+mkdir -p /opt/libclang/include
+cp -r "$CLANG_BUILTIN/." /opt/libclang/include/
+export BINDGEN_EXTRA_CLANG_ARGS="-isystem /opt/libclang/include"
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
 source $HOME/.cargo/env
 cargo build --release --lib --manifest-path wgpu-native/Cargo.toml
 """
-# LIBCLANG_PATH is repeated here because before-all's exports do not carry into
-# the per-wheel build steps, and the build hook falls back to cargo if the
-# archive is ever missing.
-environment = { PATH = "$HOME/.cargo/bin:$PATH", LIBCLANG_PATH = "/opt/libclang/clang/native" }
+# Both libclang variables are repeated here because before-all's exports do not
+# carry into the per-wheel build steps, and the build hook falls back to cargo
+# if the archive is ever missing.
+environment = { PATH = "$HOME/.cargo/bin:$PATH", LIBCLANG_PATH = "/opt/libclang/clang/native", BINDGEN_EXTRA_CLANG_ARGS = "-isystem /opt/libclang/include" }
 
 [tool.cibuildwheel.macos]
 # wgpu-native's Metal backend needs a deployment target new enough for the
