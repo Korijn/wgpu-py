@@ -1,10 +1,21 @@
 """Benchmark the generated implementation against the historical one.
 
-Run it inside each checkout with the same wgpu-native library, so the only
-variable is the Python layer:
+Nothing here touches an implementation detail, so the same file runs against a
+pre-rewrite checkout too. Point PYTHONPATH at the checkout to compare, and give
+both sides the same wgpu-native build -- then the Python layer is the only
+variable:
 
-    python -m bindgen.tests.benchmark            # this implementation
-    python .../benchmark.py --classic            # a pre-rewrite checkout
+    cargo build --release --lib --manifest-path wgpu-native/Cargo.toml
+    lib=$PWD/wgpu-native/target/release/libwgpu_native.so
+
+    PYTHONPATH=. python bindgen/tests/benchmark.py --label new
+    PYTHONPATH=/path/to/pre-rewrite/checkout WGPU_LIB_PATH=$lib \\
+        python bindgen/tests/benchmark.py --label classic
+
+The pre-rewrite implementation loads that library at runtime; this one has the
+matching static archive compiled in, so both end up in the same wgpu-native
+code. Alternate the two and keep the best run of each: a single run of either
+picks up whatever else the machine was doing.
 
 Each case is timed with the same harness and reported as microseconds per
 operation. The cases are chosen to separate the two things that actually
